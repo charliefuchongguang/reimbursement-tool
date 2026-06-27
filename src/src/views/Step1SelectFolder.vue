@@ -325,7 +325,12 @@ async function selectFolder() {
     const extractResult = await extractZipFiles(dirHandle)
     extracting.value = false
     if (extractResult.zipCount > 0) {
-      extractStatus.value = `已解压 ${extractResult.zipCount} 个压缩包，共提取 ${extractResult.totalExtracted} 个文件`
+      const failedCount = extractResult.zipCount - (extractResult.successZipCount ?? extractResult.zipCount)
+      if (failedCount > 0) {
+        extractStatus.value = `解压完成：${extractResult.successZipCount} 个成功，${failedCount} 个失败，共提取 ${extractResult.totalExtracted} 个文件`
+      } else {
+        extractStatus.value = `已解压 ${extractResult.zipCount} 个压缩包，共提取 ${extractResult.totalExtracted} 个文件`
+      }
     } else {
       extractStatus.value = ''
     }
@@ -380,41 +385,72 @@ async function extractZipFiles(dirHandle) {
 
   const validExts = ['.pdf', '.xml', '.ofd']
   let totalExtracted = 0
+  let successZipCount = 0
 
   for (const { handle, parentDir } of zipFiles) {
-    const file = await handle.getFile()
-    const zip = await JSZip.loadAsync(await file.arrayBuffer())
+    try {
+      const file = await handle.getFile()
+      const zip = await JSZip.loadAsync(await file.arrayBuffer())
 
-    for (const [filename, zipEntry] of Object.entries(zip.files)) {
-      if (zipEntry.dir) continue
+      for (const [filename, zipEntry] of Object.entries(zip.files)) {
+        if (zipEntry.dir) continue
 
-      // 只取文件名部分（zip内可能含子目录路径）
-      const baseName = filename.split('/').pop()
-      const ext = baseName.toLowerCase().substring(baseName.lastIndexOf('.'))
-      if (!validExts.includes(ext)) continue
+        // 只取文件名部分（zip内可能含子目录路径）
+        const baseName = filename.split('/').pop()
+        const ext = baseName.toLowerCase().substring(baseName.lastIndexOf('.'))
+        if (!validExts.includes(ext)) continue
 
-      // 跳过隐藏文件（如 __MACOSX 开头）
-      if (filename.startsWith('__MACOSX') || baseName.startsWith('.')) continue
+        // 跳过隐藏文件（如 __MACOSX 开头）
+        if (filename.startsWith('__MACOSX') || baseName.startsWith('.')) continue
 
-      // 检查文件是否已存在，避免覆盖
-      try {
-        await parentDir.getFileHandle(baseName)
-        continue
-      } catch {
-        // 不存在，继续解压
+        // 生成不冲突的文件名：若已存在则加序号后缀
+        const finalName = await resolveConflictName(parentDir, baseName)
+        if (!finalName) continue // 极端情况，无法生成文件名则跳过
+
+        // 写入文件
+        const content = await zipEntry.async('arraybuffer')
+        const newFileHandle = await parentDir.getFileHandle(finalName, { create: true })
+        const writable = await newFileHandle.createWritable()
+        await writable.write(content)
+        await writable.close()
+        totalExtracted++
       }
-
-      // 写入文件
-      const content = await zipEntry.async('arraybuffer')
-      const newFileHandle = await parentDir.getFileHandle(baseName, { create: true })
-      const writable = await newFileHandle.createWritable()
-      await writable.write(content)
-      await writable.close()
-      totalExtracted++
+      successZipCount++
+    } catch (e) {
+      console.warn(`解压压缩包 [${handle.name}] 失败:`, e)
+      // 单个压缩包失败不中断，继续处理后续压缩包
     }
   }
 
-  return { zipCount: zipFiles.length, totalExtracted }
+  return { zipCount: zipFiles.length, totalExtracted, successZipCount }
+}
+
+// 解决文件名冲突：若目标目录已存在同名文件，自动加 _1, _2 ... 后缀
+async function resolveConflictName(dirHandle, baseName) {
+  const dotIdx = baseName.lastIndexOf('.')
+  const nameWithoutExt = dotIdx > 0 ? baseName.substring(0, dotIdx) : baseName
+  const ext = dotIdx > 0 ? baseName.substring(dotIdx) : ''
+
+  // 先尝试原始文件名
+  try {
+    await dirHandle.getFileHandle(baseName)
+    // 文件已存在，需要加序号
+  } catch {
+    // 文件不存在，直接使用原始文件名
+    return baseName
+  }
+
+  // 尝试加序号后缀，最多尝试 999 个
+  for (let i = 1; i <= 999; i++) {
+    const candidate = `${nameWithoutExt}_${i}${ext}`
+    try {
+      await dirHandle.getFileHandle(candidate)
+      // 仍然存在，继续尝试
+    } catch {
+      return candidate
+    }
+  }
+  return null // 极端情况
 }
 
 // 递归扫描文件夹

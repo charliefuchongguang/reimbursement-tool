@@ -141,6 +141,7 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Delete, ArrowDown } from '@element-plus/icons-vue'
 import { useSessionStore } from '../stores/session'
+import { useHistoryStore } from '../stores/history'
 import { CATEGORIES } from '../utils/constants'
 import { parsePdf, renderPdfPageToImage } from '../services/pdfParser'
 import { parseInvoiceXml } from '../services/xmlParser'
@@ -154,6 +155,7 @@ import ComplianceList from '../components/ComplianceList.vue'
 import ManualAddDialog from '../components/ManualAddDialog.vue'
 
 const sessionStore = useSessionStore()
+const historyStore = useHistoryStore()
 
 // ─── 识别状态 ───
 const recognizing = ref(false)
@@ -389,8 +391,9 @@ async function startRecognition() {
   // 链路校验
   const chainResult = checkTransportChain(classified)
 
-  // 合规检查
-  const complianceResult = runComplianceCheck(classified, files)
+  // 合规检查（含历史发票编号去重）
+  const historicalInvoiceNos = historyStore.getAllHistoricalInvoiceNos()
+  const complianceResult = runComplianceCheck(classified, files, historicalInvoiceNos)
 
   // 合并问题到每张发票
   for (const inv of classified) {

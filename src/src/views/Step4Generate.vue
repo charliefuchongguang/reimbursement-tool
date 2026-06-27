@@ -98,6 +98,7 @@ import { FolderAdd } from '@element-plus/icons-vue'
 import { useSessionStore } from '../stores/session'
 import { useFormStore } from '../stores/form'
 import { useSettingsStore } from '../stores/settings'
+import { useHistoryStore } from '../stores/history'
 import { CATEGORIES } from '../utils/constants'
 import { archiveInvoices } from '../services/archiver'
 import { generateExcel } from '../services/excelGenerator'
@@ -105,6 +106,7 @@ import { generateExcel } from '../services/excelGenerator'
 const sessionStore = useSessionStore()
 const formStore = useFormStore()
 const settingsStore = useSettingsStore()
+const historyStore = useHistoryStore()
 
 // ─── 状态 ───
 const executing = ref(false)
@@ -209,6 +211,14 @@ async function execute() {
     // 5. 完成
     completed.value = true
     ElMessage.success('归档与生成完成！')
+
+    // 6. 保存任务记录
+    historyStore.saveTask({
+      formData: formStore,
+      invoices: sessionStore.invoices,
+      folderName: folderName.value,
+      excelFileName: excelFileName.value
+    })
   } catch (e) {
     console.error('归档或生成失败：', e)
     ElMessage.error(`操作失败：${e.message}`)

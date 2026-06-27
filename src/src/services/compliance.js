@@ -10,9 +10,10 @@ const PREPAID_CARD_KEYWORDS = ['预付卡', '储值卡', '充值卡', '购物卡
  * 对所有发票执行合规性检查
  * @param {Array} invoices - 识别后的发票数组
  * @param {Array} files - 扫描到的文件列表（用于检查是否有配套文件）
+ * @param {Set<string>} [historicalInvoiceNos] - 历史任务中的发票编号集合（用于去重）
  * @returns {Object} { invoiceIssues: Map<id, issues[]>, globalIssues: issues[] }
  */
-export function runComplianceCheck(invoices, files = []) {
+export function runComplianceCheck(invoices, files = [], historicalInvoiceNos = new Set()) {
   const invoiceIssues = new Map() // 每张发票的问题
   const globalIssues = [] // 全局问题
 
@@ -59,6 +60,11 @@ export function runComplianceCheck(invoices, files = []) {
 
     // 规则8：替票检测（通过发票类别与内容不匹配来推测）
     checkSubstituteInvoice(inv, issues)
+
+    // 规则9：发票编号跨任务去重
+    if (historicalInvoiceNos.size > 0) {
+      checkDuplicateInvoiceNo(inv, historicalInvoiceNos, issues)
+    }
 
     if (issues.length > 0) {
       invoiceIssues.set(inv.id, issues)
@@ -309,6 +315,24 @@ function checkSubstituteInvoice(inv, issues) {
       code: 'substitute_invoice_suspected',
       severity: 'info',
       msg: `发票"${label}"：销售方为超市类，但分类为"${inv.category}"，疑似替票。如确为替票，需另附说明表备注实际费用`
+    })
+  }
+}
+
+/**
+ * 规则9：发票编号跨任务去重检查
+ * 检查当前发票编号是否已在历史报销记录中出现过
+ * @param {Object} inv - 发票数据
+ * @param {Set<string>} historicalInvoiceNos - 历史任务中的发票编号集合
+ * @param {Array} issues - 问题数组（就地追加）
+ */
+function checkDuplicateInvoiceNo(inv, historicalInvoiceNos, issues) {
+  if (!inv.invoiceNo) return
+  if (historicalInvoiceNos.has(inv.invoiceNo)) {
+    issues.push({
+      code: 'duplicate_invoice_no',
+      severity: 'warn',
+      msg: `发票"${inv.invoiceNo}"：该发票编号在历史报销记录中已存在，疑似重复报销`
     })
   }
 }

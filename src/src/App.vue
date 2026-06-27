@@ -13,42 +13,51 @@
       <!-- 顶部导航栏 -->
       <AppHeader @open-settings="settingsVisible = true" />
 
-      <!-- 步骤条 -->
-      <div class="steps-wrapper">
-        <el-steps :active="currentStep" finish-status="success" align-center>
-          <el-step title="选择文件夹" />
-          <el-step title="识别审查" />
-          <el-step title="填写信息" />
-          <el-step title="归档生成" />
-        </el-steps>
-      </div>
+      <!-- Tab 切换 -->
+      <el-tabs v-model="activeTab" class="app-tabs">
+        <el-tab-pane label="报销流程" name="flow">
+          <!-- 步骤条 -->
+          <div class="steps-wrapper">
+            <el-steps :active="currentStep" finish-status="success" align-center>
+              <el-step title="选择文件夹" />
+              <el-step title="识别审查" />
+              <el-step title="填写信息" />
+              <el-step title="归档生成" />
+            </el-steps>
+          </div>
 
-      <!-- 主内容区 -->
-      <el-main class="app-main">
-        <Step1SelectFolder v-if="currentStep === 0" />
-        <Step2ReviewInvoices v-else-if="currentStep === 1" ref="step2Ref" />
-        <Step3FillInfo v-else-if="currentStep === 2" ref="step3Ref" />
-        <Step4Generate v-else-if="currentStep === 3" />
-      </el-main>
+          <!-- 主内容区 -->
+          <el-main class="app-main">
+            <Step1SelectFolder v-if="currentStep === 0" />
+            <Step2ReviewInvoices v-else-if="currentStep === 1" ref="step2Ref" />
+            <Step3FillInfo v-else-if="currentStep === 2" ref="step3Ref" />
+            <Step4Generate v-else-if="currentStep === 3" />
+          </el-main>
 
-      <!-- 底部导航按钮 -->
-      <el-footer class="app-footer">
-        <div class="footer-buttons">
-          <el-button
-            :disabled="currentStep === 0"
-            @click="prevStep"
-          >
-            上一步
-          </el-button>
-          <el-button
-            type="primary"
-            :disabled="currentStep === 3"
-            @click="nextStep"
-          >
-            下一步
-          </el-button>
-        </div>
-      </el-footer>
+          <!-- 底部导航按钮 -->
+          <el-footer class="app-footer">
+            <div class="footer-buttons">
+              <el-button
+                :disabled="currentStep === 0"
+                @click="prevStep"
+              >
+                上一步
+              </el-button>
+              <el-button
+                type="primary"
+                :disabled="currentStep === 3"
+                @click="nextStep"
+              >
+                下一步
+              </el-button>
+            </div>
+          </el-footer>
+        </el-tab-pane>
+
+        <el-tab-pane label="任务记录" name="history">
+          <TaskHistory />
+        </el-tab-pane>
+      </el-tabs>
 
       <!-- 设置弹窗 -->
       <SettingsDialog v-model:visible="settingsVisible" />
@@ -67,10 +76,12 @@ import Step1SelectFolder from './views/Step1SelectFolder.vue'
 import Step2ReviewInvoices from './views/Step2ReviewInvoices.vue'
 import Step3FillInfo from './views/Step3FillInfo.vue'
 import Step4Generate from './views/Step4Generate.vue'
+import TaskHistory from './views/TaskHistory.vue'
 
 const settingsStore = useSettingsStore()
 const sessionStore = useSessionStore()
 
+const activeTab = ref('flow')
 const currentStep = ref(0)
 const settingsVisible = ref(false)
 const isSupported = ref(true)
@@ -145,10 +156,42 @@ html, body, #app {
   height: 100vh;
 }
 
+/* Tab 切换栏 */
+.app-tabs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-tabs > .el-tabs__header {
+  margin: 0;
+  padding: 0 20px;
+  background: #f5f7fa;
+  border-bottom: 1px solid #e4e7ed;
+  flex-shrink: 0;
+}
+
+.app-tabs > .el-tabs__content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-tabs .el-tab-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+}
+
 .steps-wrapper {
   padding: 20px 40px;
   background-color: #f5f7fa;
   border-bottom: 1px solid #e4e7ed;
+  flex-shrink: 0;
 }
 
 .app-main {
@@ -165,6 +208,7 @@ html, body, #app {
   border-top: 1px solid #e4e7ed;
   background-color: #fff;
   height: 60px !important;
+  flex-shrink: 0;
 }
 
 .footer-buttons {

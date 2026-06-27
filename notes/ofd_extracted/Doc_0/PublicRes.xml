@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ofd:Res xmlns:ofd="http://www.ofdspec.org/2016" BaseLoc="Res">
+	<ofd:Fonts>
+		<ofd:Font ID="6" FontName="黑体">
+			
+		</ofd:Font>
+		<ofd:Font ID="8" FontName="微软雅黑">
+			
+		</ofd:Font>
+		<ofd:Font ID="10" FontName="等线">
+			
+		</ofd:Font>
+		<ofd:Font ID="12" FontName="等线">
+			
+		</ofd:Font>
+		<ofd:Font ID="39" FontName="等线">
+			
+		</ofd:Font>
+		<ofd:Font ID="77" FontName="宋体">
+			
+		</ofd:Font>
+		<ofd:Font ID="80" FontName="宋体">
+			
+		</ofd:Font>
+		<ofd:Font ID="95" FontName="黑体">
+			
+		</ofd:Font>
+	<ofd:Font ID="2400" FontName="SimHei"/><ofd:Font ID="2435" FontName="楷体" FamilyName="楷体"/></ofd:Fonts>
+<ofd:ColorSpaces><ofd:ColorSpace ID="2431" Type="RGB" BitsPerComponent="8"/></ofd:ColorSpaces></ofd:Res>

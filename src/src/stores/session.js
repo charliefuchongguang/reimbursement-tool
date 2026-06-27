@@ -1,0 +1,32 @@
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+
+export const useSessionStore = defineStore('session', () => {
+  // 选中的源文件夹句柄（File System Access API）
+  const sourceDirHandle = ref(null)
+
+  // 扫描到的文件列表
+  const files = ref([])
+
+  // 识别后的发票数据
+  const invoices = ref([])
+
+  // 跨发票问题
+  const globalIssues = ref([])
+
+  // 重置会话数据
+  const resetSession = () => {
+    sourceDirHandle.value = null
+    files.value = []
+    invoices.value = []
+    globalIssues.value = []
+  }
+
+  return {
+    sourceDirHandle,
+    files,
+    invoices,
+    globalIssues,
+    resetSession
+  }
+})

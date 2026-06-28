@@ -77,6 +77,17 @@
           <span>{{ extractStatus }}</span>
         </div>
 
+        <!-- 解压失败详情 -->
+        <div v-if="extractErrors.length > 0" class="extract-errors">
+          <el-alert type="warning" :closable="false" show-icon title="以下压缩包解压失败：">
+            <ul class="error-list">
+              <li v-for="(err, idx) in extractErrors" :key="idx">
+                <strong>{{ err.name }}</strong>：{{ err.error }}
+              </li>
+            </ul>
+          </el-alert>
+        </div>
+
         <div class="stats-row">
           <div class="stat-item">
             <div class="stat-value">{{ pdfCount }}</div>
@@ -290,6 +301,7 @@ const plannedFeatures = [
 const scanning = ref(false)
 const extracting = ref(false)
 const extractStatus = ref('')
+const extractErrors = ref([])  // [{name, error}]
 const folderName = ref('')
 const fileListExpanded = ref(true)
 const currentPage = ref(1)
@@ -322,17 +334,21 @@ async function selectFolder() {
     // 先解压压缩包
     extracting.value = true
     extractStatus.value = '正在扫描压缩包...'
+    extractErrors.value = []
     const extractResult = await extractZipFiles(dirHandle)
     extracting.value = false
     if (extractResult.zipCount > 0) {
       const failedCount = extractResult.zipCount - (extractResult.successZipCount ?? extractResult.zipCount)
       if (failedCount > 0) {
         extractStatus.value = `解压完成：${extractResult.successZipCount} 个成功，${failedCount} 个失败，共提取 ${extractResult.totalExtracted} 个文件`
+        extractErrors.value = extractResult.errors || []
       } else {
         extractStatus.value = `已解压 ${extractResult.zipCount} 个压缩包，共提取 ${extractResult.totalExtracted} 个文件`
+        extractErrors.value = []
       }
     } else {
       extractStatus.value = ''
+      extractErrors.value = []
     }
 
     // 扫描文件夹
@@ -386,22 +402,46 @@ async function extractZipFiles(dirHandle) {
   const validExts = ['.pdf', '.xml', '.ofd']
   let totalExtracted = 0
   let successZipCount = 0
+  const errors = []  // 记录失败详情
 
   for (const { handle, parentDir } of zipFiles) {
     try {
       const file = await handle.getFile()
-      const zip = await JSZip.loadAsync(await file.arrayBuffer())
+      const arrayBuffer = await file.arrayBuffer()
+      const zip = await JSZip.loadAsync(arrayBuffer)
 
-      for (const [filename, zipEntry] of Object.entries(zip.files)) {
+      // 直接从ZIP二进制中央目录按顺序提取GBK解码的文件名
+      // 与 JSZip 条目按索引位置一一对应（JSZip 按中央目录顺序加载）
+      const gbkNames = extractGbkFileNames(arrayBuffer)
+      const jsZipEntries = Object.entries(zip.files)
+
+      // 诊断日志
+      if (gbkNames.length > 0) {
+        console.log('[ZIP解码诊断]', {
+          gbkCount: gbkNames.length,
+          jsZipCount: jsZipEntries.length,
+          sample: gbkNames.slice(0, 3)
+        })
+      }
+
+      for (let idx = 0; idx < jsZipEntries.length; idx++) {
+        const [, zipEntry] = jsZipEntries[idx]
         if (zipEntry.dir) continue
 
+        // 按索引位置匹配GBK解码名
+        const decodedFilename = gbkNames[idx] || zipEntry.name
+
         // 只取文件名部分（zip内可能含子目录路径）
-        const baseName = filename.split('/').pop()
-        const ext = baseName.toLowerCase().substring(baseName.lastIndexOf('.'))
+        const rawName = decodedFilename.split('/').pop()
+        const ext = rawName.toLowerCase().substring(rawName.lastIndexOf('.'))
         if (!validExts.includes(ext)) continue
 
         // 跳过隐藏文件（如 __MACOSX 开头）
-        if (filename.startsWith('__MACOSX') || baseName.startsWith('.')) continue
+        if (decodedFilename.startsWith('__MACOSX') || rawName.startsWith('.')) continue
+
+        // 清洗文件名：去除文件系统 API 不允许的非法字符
+        const baseName = sanitizeFileName(rawName, ext)
+        if (!baseName) continue // 清洗后文件名为空则跳过
 
         // 生成不冲突的文件名：若已存在则加序号后缀
         const finalName = await resolveConflictName(parentDir, baseName)
@@ -418,11 +458,94 @@ async function extractZipFiles(dirHandle) {
       successZipCount++
     } catch (e) {
       console.warn(`解压压缩包 [${handle.name}] 失败:`, e)
-      // 单个压缩包失败不中断，继续处理后续压缩包
+      errors.push({ name: handle.name, error: e.message || String(e) })
     }
   }
 
-  return { zipCount: zipFiles.length, totalExtracted, successZipCount }
+  return { zipCount: zipFiles.length, totalExtracted, successZipCount, errors }
+}
+
+/**
+ * 直接从ZIP二进制数据的中央目录中按顺序提取GBK解码的文件名
+ * @param {ArrayBuffer} arrayBuffer - ZIP文件的完整二进制数据
+ * @returns {string[]} 按中央目录顺序排列的GBK解码文件名数组
+ */
+function extractGbkFileNames(arrayBuffer) {
+  const names = []
+  try {
+    const view = new DataView(arrayBuffer)
+    const bytes = new Uint8Array(arrayBuffer)
+    const len = bytes.length
+
+    // 1. 找到 End of Central Directory Record (EOCD)
+    let eocdOffset = -1
+    for (let i = len - 22; i >= Math.max(0, len - 65557); i--) {
+      if (view.getUint32(i, true) === 0x06054b50) {
+        eocdOffset = i
+        break
+      }
+    }
+    if (eocdOffset === -1) return names
+
+    // 2. 从EOCD获取中央目录信息
+    const cdEntryCount = view.getUint16(eocdOffset + 10, true)
+    const cdOffset = view.getUint32(eocdOffset + 16, true)
+
+    // 3. 遍历中央目录条目，按顺序提取文件名
+    let pos = cdOffset
+    for (let i = 0; i < cdEntryCount && pos < len - 46; i++) {
+      if (view.getUint32(pos, true) !== 0x02014b50) break
+
+      const fileNameLen = view.getUint16(pos + 28, true)
+      const extraFieldLen = view.getUint16(pos + 30, true)
+      const commentLen = view.getUint16(pos + 32, true)
+
+      const nameStart = pos + 46
+      const rawNameBytes = bytes.slice(nameStart, nameStart + fileNameLen)
+
+      // 用GBK解码原始字节
+      const decoded = new TextDecoder('gbk', { fatal: false }).decode(rawNameBytes)
+
+      if (decoded.includes('\uFFFD')) {
+        // GBK 解码失败，回退到 Latin1
+        let fallback = ''
+        for (let j = 0; j < rawNameBytes.length; j++) {
+          fallback += String.fromCharCode(rawNameBytes[j])
+        }
+        names.push(fallback)
+      } else {
+        names.push(decoded)
+      }
+
+      pos = nameStart + fileNameLen + extraFieldLen + commentLen
+    }
+  } catch (e) {
+    console.warn('解析ZIP中央目录失败:', e)
+  }
+  return names
+}
+
+/**
+ * 清洗文件名，去除 File System Access API 不允许的字符
+ * Windows 禁用字符：< > : " / \ | ? * 以及控制字符
+ * 文件名不能以空格或点号结尾
+ */
+function sanitizeFileName(rawName, ext) {
+  // 分离文件名和扩展名
+  const dotIdx = rawName.lastIndexOf('.')
+  let namePart = dotIdx > 0 ? rawName.substring(0, dotIdx) : rawName
+  const extPart = dotIdx > 0 ? rawName.substring(dotIdx) : ext
+
+  // 去除 Windows 禁用字符
+  namePart = namePart.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+
+  // 去除首尾空格和点号
+  namePart = namePart.replace(/^[\s.]+|[\s.]+$/g, '').trim()
+
+  // 如果清洗后文件名为空，使用默认名
+  if (!namePart) namePart = 'extracted'
+
+  return namePart + extPart
 }
 
 // 解决文件名冲突：若目标目录已存在同名文件，自动加 _1, _2 ... 后缀
@@ -454,11 +577,22 @@ async function resolveConflictName(dirHandle, baseName) {
 }
 
 // 递归扫描文件夹
+// 已知的非发票文件关键词（文件名包含这些词则跳过）
+const NON_INVOICE_KEYWORDS = [
+  '运单明细',   // 顺丰等快递的运单详情
+  '发票运单',   // 运单明细的另一种命名
+]
+
 async function scanRecursive(dirHandle, path, results) {
   for await (const entry of dirHandle.values()) {
     if (entry.kind === 'file') {
       const name = entry.name.toLowerCase()
       if (name.endsWith('.pdf') || name.endsWith('.xml') || name.endsWith('.ofd')) {
+        // 跳过已知的非发票文件（如快递运单明细）
+        if (NON_INVOICE_KEYWORDS.some(kw => entry.name.includes(kw))) {
+          console.log(`[扫描] 跳过非发票文件: ${entry.name}`)
+          continue
+        }
         const file = await entry.getFile()
         let type = 'xml'
         if (name.endsWith('.pdf')) type = 'pdf'
@@ -773,6 +907,31 @@ function formatSize(bytes) {
   padding: 8px 12px;
   background: #fdf6ec;
   border-radius: 6px;
+}
+
+/* 解压失败详情 */
+.extract-errors {
+  margin-bottom: 12px;
+}
+
+.extract-errors .el-alert {
+  padding: 10px 14px;
+}
+
+.error-list {
+  margin: 8px 0 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.8;
+  color: #606266;
+}
+
+.error-list li {
+  word-break: break-all;
+}
+
+.error-list strong {
+  color: #e6a23c;
 }
 
 .pagination-wrapper {

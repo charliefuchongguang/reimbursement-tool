@@ -210,8 +210,16 @@ function checkAccommodationReceipt(inv, files, issues) {
  * @param {Object} inv - 发票数据
  * @param {Array} issues - 问题数组（就地追加）
  */
+// 已知的非发票文档关键词（这些文件不需要配套XML）
+const NON_INVOICE_FILE_KEYWORDS = ['运单明细', '发票运单', '行程报销单']
+
 function checkElectronicInvoiceCompleteness(inv, issues) {
   const label = inv.invoiceNo || inv.fileName
+
+  // 文件名包含非发票关键词（如运单明细），跳过检查
+  if (inv.fileName && NON_INVOICE_FILE_KEYWORDS.some(kw => inv.fileName.includes(kw))) {
+    return
+  }
 
   // 如果有配套 XML 标记，则通过
   if (inv.hasCompanionXml || inv.companionFileHandle || inv.pairedWith || inv.companionFileName) {

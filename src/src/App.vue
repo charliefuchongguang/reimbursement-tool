@@ -57,6 +57,10 @@
         <el-tab-pane label="任务记录" name="history">
           <TaskHistory />
         </el-tab-pane>
+
+        <el-tab-pane label="出差日历" name="calendar">
+          <TripCalendar />
+        </el-tab-pane>
       </el-tabs>
 
       <!-- 设置弹窗 -->
@@ -77,6 +81,7 @@ import Step2ReviewInvoices from './views/Step2ReviewInvoices.vue'
 import Step3FillInfo from './views/Step3FillInfo.vue'
 import Step4Generate from './views/Step4Generate.vue'
 import TaskHistory from './views/TaskHistory.vue'
+import TripCalendar from './views/TripCalendar.vue'
 
 const settingsStore = useSettingsStore()
 const sessionStore = useSessionStore()

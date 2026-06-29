@@ -32,6 +32,15 @@
     <div class="section-card">
       <div class="section-title">操作</div>
 
+      <!-- 打印文件合并方式 -->
+      <div class="print-layout-option">
+        <div class="option-label">生成打印文件</div>
+        <el-radio-group v-model="printLayout">
+          <el-radio value="twoPerPage">拼接（一张两页）</el-radio>
+          <el-radio value="onePerPage">不拼接（一张一页）</el-radio>
+        </el-radio-group>
+      </div>
+
       <!-- 执行按钮 -->
       <el-button
         type="primary"
@@ -47,17 +56,22 @@
       <!-- 进度区 -->
       <div v-if="executing" class="progress-area">
         <el-progress
-          :percentage="archivePhase ? archiveProgress : 100"
-          :format="archivePhase ? archiveFormat : () => ''"
+          :percentage="currentProgress"
           :stroke-width="18"
-          :status="excelPhase && !completed ? 'success' : ''"
+          :status="completed ? 'success' : ''"
         />
         <div class="progress-text">
+          <div v-for="(step, idx) in completedSteps" :key="idx" class="step-completed">
+            ✅ {{ step }}
+          </div>
           <template v-if="archivePhase">
-            归档中... ({{ archiveCurrent }}/{{ archiveTotal }})
+            正在归档文件... ({{ archiveCurrent }}/{{ archiveTotal }})
           </template>
           <template v-else-if="excelPhase">
             正在生成报销单...
+          </template>
+          <template v-else-if="mergePhase">
+            正在合并PDF文件... ({{ mergeCurrent }}/{{ mergeTotal }})
           </template>
         </div>
       </div>
@@ -70,6 +84,15 @@
           <div class="result-detail">
             <div class="result-item">📁 {{ folderName }}</div>
             <div class="result-item">📄 {{ excelFileName }}</div>
+            <div v-for="mf in mergedFiles" :key="mf" class="result-item">📄 {{ mf }}</div>
+          </div>
+          <!-- PDF文件信息 -->
+          <div v-if="pdfInfos.length > 0" class="pdf-info-list">
+            <div class="pdf-info-title">📋 生成的PDF文件</div>
+            <div v-for="info in pdfInfos" :key="info.name" class="pdf-info-item">
+              <span class="pdf-info-name">{{ info.name }}</span>
+              <span class="pdf-info-detail">{{ info.pages }}页，{{ info.size }}</span>
+            </div>
           </div>
           <!-- 归档失败文件 -->
           <div v-if="archiveErrors.length > 0" class="error-list">
@@ -102,6 +125,8 @@ import { useHistoryStore } from '../stores/history'
 import { CATEGORIES } from '../utils/constants'
 import { archiveInvoices } from '../services/archiver'
 import { generateExcel } from '../services/excelGenerator'
+import { mergeInvoicePdfs, mergeOtherPdfs } from '../services/pdfMerger'
+import { PDFDocument } from 'pdf-lib'
 
 const sessionStore = useSessionStore()
 const formStore = useFormStore()
@@ -117,6 +142,26 @@ const archiveProgress = ref(0)
 const archiveCurrent = ref(0)
 const archiveTotal = ref(0)
 const archiveErrors = ref([])
+const mergePhase = ref(false)
+const mergeCurrent = ref(0)
+const mergeTotal = ref(0)
+const mergedFiles = ref([])
+const printLayout = ref('twoPerPage')
+const completedSteps = ref([])
+const pdfInfos = ref([])
+
+// 非发票类型（正常合并，不做排版）
+const NON_INVOICE_TYPES = ['机票行程单', '打车行程单']
+
+// 当前进度百分比
+const currentProgress = computed(() => {
+  if (archivePhase.value) return archiveProgress.value
+  if (excelPhase.value) return 100
+  if (mergePhase.value && mergeTotal.value > 0) {
+    return Math.round((mergeCurrent.value / mergeTotal.value) * 100)
+  }
+  return 100
+})
 
 // ─── 计算属性 ───
 
@@ -163,6 +208,8 @@ async function execute() {
   archiveCurrent.value = 0
   archiveTotal.value = 0
   archiveErrors.value = []
+  completedSteps.value = []
+  pdfInfos.value = []
   completed.value = false
 
   try {
@@ -190,6 +237,7 @@ async function execute() {
       }
     )
     archiveErrors.value = archiveResult.errors || []
+    completedSteps.value.push('归档完成')
 
     // 3. 生成 Excel
     archivePhase.value = false
@@ -207,12 +255,77 @@ async function execute() {
     const writable = await excelFileHandle.createWritable()
     await writable.write(excelBuffer)
     await writable.close()
+    completedSteps.value.push('报销单生成完成')
 
-    // 5. 完成
+    // 5. PDF 合并
+    mergePhase.value = true
+    excelPhase.value = false
+    mergedFiles.value = []
+    pdfInfos.value = []
+
+    const invoicePdfs = sessionStore.invoices.filter(
+      inv => !NON_INVOICE_TYPES.includes(inv.invoiceType) && inv.fileHandle
+    )
+    const otherPdfs = sessionStore.invoices.filter(
+      inv => NON_INVOICE_TYPES.includes(inv.invoiceType) && inv.fileHandle
+    )
+
+    mergeTotal.value = invoicePdfs.length + otherPdfs.length
+    mergeCurrent.value = 0
+
+    try {
+      // 发票类 PDF 合并（根据用户选择决定排版方式）
+      if (invoicePdfs.length > 0) {
+        const mergeFn = printLayout.value === 'twoPerPage' ? mergeInvoicePdfs : mergeOtherPdfs
+        const mergedData = await mergeFn(invoicePdfs, (cur) => {
+          mergeCurrent.value = cur
+        })
+        const invoiceFileName = '发票合并打印.pdf'
+        const invFileHandle = await rootDir.getFileHandle(invoiceFileName, { create: true })
+        const invWritable = await invFileHandle.createWritable()
+        await invWritable.write(mergedData)
+        await invWritable.close()
+        mergedFiles.value.push(invoiceFileName)
+        const invPdfDoc = await PDFDocument.load(mergedData)
+        pdfInfos.value.push({
+          name: invoiceFileName,
+          pages: invPdfDoc.getPageCount(),
+          size: formatFileSize(mergedData.length)
+        })
+      }
+
+      // 非发票类 PDF 正常合并
+      if (otherPdfs.length > 0) {
+        const mergedData = await mergeOtherPdfs(otherPdfs, (cur) => {
+          mergeCurrent.value = invoicePdfs.length + cur
+        })
+        const otherFileName = '其他票据合并.pdf'
+        const otherFileHandle = await rootDir.getFileHandle(otherFileName, { create: true })
+        const otherWritable = await otherFileHandle.createWritable()
+        await otherWritable.write(mergedData)
+        await otherWritable.close()
+        mergedFiles.value.push(otherFileName)
+        const otherPdfDoc = await PDFDocument.load(mergedData)
+        pdfInfos.value.push({
+          name: otherFileName,
+          pages: otherPdfDoc.getPageCount(),
+          size: formatFileSize(mergedData.length)
+        })
+      }
+      completedSteps.value.push('PDF合并完成')
+    } catch (mergeErr) {
+      console.error('PDF合并失败：', mergeErr)
+      ElMessage.warning(`PDF合并失败（不影响归档结果）：${mergeErr.message}`)
+      completedSteps.value.push('PDF合并失败（已跳过）')
+    }
+
+    mergePhase.value = false
+
+    // 6. 完成
     completed.value = true
     ElMessage.success('归档与生成完成！')
 
-    // 6. 保存任务记录
+    // 7. 保存任务记录
     historyStore.saveTask({
       formData: formStore,
       invoices: sessionStore.invoices,
@@ -225,6 +338,12 @@ async function execute() {
   } finally {
     executing.value = false
   }
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 </script>
 
@@ -313,6 +432,18 @@ async function execute() {
   color: #303133;
 }
 
+.print-layout-option {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.option-label {
+  font-size: 13px;
+  color: #909399;
+  margin-bottom: 8px;
+}
+
 /* 进度区 */
 .progress-area {
   margin-top: 16px;
@@ -323,6 +454,11 @@ async function execute() {
   font-size: 13px;
   color: #606266;
   margin-top: 8px;
+}
+
+.step-completed {
+  color: #67c23a;
+  margin-bottom: 4px;
 }
 
 /* 完成区 */
@@ -347,6 +483,46 @@ async function execute() {
 .error-list {
   margin-top: 12px;
   text-align: left;
+}
+
+/* PDF文件信息列表 */
+.pdf-info-list {
+  margin-top: 12px;
+  text-align: left;
+  background: #f5f7fa;
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+
+.pdf-info-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 8px;
+}
+
+.pdf-info-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  padding: 4px 0;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.pdf-info-item:last-child {
+  border-bottom: none;
+}
+
+.pdf-info-name {
+  color: #303133;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+}
+
+.pdf-info-detail {
+  color: #909399;
+  flex-shrink: 0;
+  margin-left: 12px;
 }
 
 .error-list ul {

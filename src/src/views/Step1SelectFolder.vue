@@ -229,7 +229,8 @@ import {
   Clock,
   Box,
   Printer,
-  DataAnalysis
+  DataAnalysis,
+  Calendar
 } from '@element-plus/icons-vue'
 import { useSessionStore } from '@/stores/session'
 
@@ -272,29 +273,35 @@ const features = [
     color: '#409eff',
     title: '一键生成报销单',
     desc: '发票金额按类别自动填入报销单，自动填写大写金额，一键导出 Excel 报销单。'
-  }
-]
-
-// 计划实现的功能（即将上线）
-const plannedFeatures = [
+  },
   {
     icon: Box,
     color: '#e6a23c',
     title: '压缩包自动解压',
-    desc: '先自动解压目标文件夹下的所有压缩包（.zip / .rar 等），再统一进行发票识别处理，无需手动拆包。'
-  },
-  {
-    icon: Printer,
-    color: '#67c23a',
-    title: 'PDF 合并与拼版打印',
-    desc: '将多张发票 PDF 合并为一份，方便集中打印；同时提供"每页一张"和"每页两张"两种拼接方式可选。'
+    desc: '自动解压目标文件夹下的所有压缩包（.zip 等），再统一进行发票识别处理，无需手动拆包。'
   },
   {
     icon: DataAnalysis,
     color: '#9b59b6',
     title: '任务记录与发票去重',
     desc: '自动记录每次发票整理的历史任务；下次报销时识别并过滤已报销过的发票，避免重复报销。'
+  },
+  {
+    icon: Calendar,
+    color: '#67c23a',
+    title: '出差日历',
+    desc: '根据交通费发票日期自动汇总出差行程，以日历视图直观展示每次出差的时间、地点和费用明细。'
+  },
+  {
+    icon: Printer,
+    color: '#67c23a',
+    title: 'PDF 合并与拼版打印',
+    desc: '将多张发票 PDF 合并为一份，方便集中打印；提供“拼接（一张两页）”和“不拼接（一张一页）”两种方式可选。'
   }
+]
+
+// 计划实现的功能（即将上线）
+const plannedFeatures = [
 ]
 
 // UI 状态

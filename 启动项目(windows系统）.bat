@@ -19,8 +19,22 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+:: 检查并安装依赖
+if not exist "node_modules\vite" (
+    echo [1/3] 首次运行，正在安装依赖...
+    call npm install
+    if %errorlevel% neq 0 (
+        echo [错误] 依赖安装失败，请检查网络连接。
+        pause
+        exit /b 1
+    )
+    echo.
+) else (
+    echo [1/3] 依赖已就绪。
+)
+
 :: 清理占用端口（使用 netstat，无需额外依赖）
-echo [1/2] 清理端口占用...
+echo [2/3] 清理端口占用...
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":5173 " ^| findstr "LISTENING"') do (
     taskkill /f /pid %%a >nul 2>nul
 )
@@ -29,7 +43,7 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":5174 " ^| findstr "LISTENIN
 )
 
 :: 启动开发服务
-echo [2/2] 启动开发服务器...
+echo [3/3] 启动开发服务器...
 echo.
 echo 启动后请在浏览器访问：http://localhost:5173/
 echo （请使用 Chrome 或 Edge 浏览器）

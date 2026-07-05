@@ -8,10 +8,7 @@ import { PDFDocument } from 'pdf-lib'
 
 // Worker 已在 pdfParser.js 中设置，此处仅在未设置时补设
 if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-    'pdfjs-dist/legacy/build/pdf.worker.mjs',
-    import.meta.url
-  ).href
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.mjs'
 }
 
 // A4 尺寸（points）

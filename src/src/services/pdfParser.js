@@ -2,11 +2,8 @@
 // 兼容旧版 Chrome / Edge / Firefox（避免 "hashOriginal.toHex is not a function" 错误）。
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 
-// 设置 worker（Vite 环境下，使用 legacy worker 以匹配 legacy 主库）
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/legacy/build/pdf.worker.mjs',
-  import.meta.url
-).href
+// 设置 worker（Vite 环境下，从 public 目录加载以避免动态导入失败）
+pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.mjs'
 
 /**
  * 从 PDF 文件中抽取所有文本

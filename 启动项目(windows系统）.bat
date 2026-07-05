@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 chcp 65001 >nul
 title 报销辅助工具
 color 0A
@@ -34,7 +34,14 @@ if not exist "node_modules\vite" (
     echo [1/3] 依赖已就绪。
 )
 
-:: 清理占用端口（使用 netstat，无需额外依赖）
+:: 确保 PDF worker 文件存在（pdfjs-dist 升级后需重新复制）
+if not exist "public\pdf.worker.mjs" (
+    if exist "node_modules\pdfjs-dist\legacy\build\pdf.worker.mjs" (
+        copy /Y "node_modules\pdfjs-dist\legacy\build\pdf.worker.mjs" "public\pdf.worker.mjs" >nul
+    )
+)
+
+:: 清理占用端口
 echo [2/3] 清理端口占用...
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":5173 " ^| findstr "LISTENING"') do (
     taskkill /f /pid %%a >nul 2>nul

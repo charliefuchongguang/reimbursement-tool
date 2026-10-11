@@ -127,7 +127,7 @@ function seedAdmin() {
     nickname: config.adminNickname,
     password,
     role: 'admin',
-    mustChangePassword: 0
+    mustChangePassword: 1
   })
   console.log(`[db] 已创建管理员账号：${config.adminPhone}`)
 }

@@ -15,5 +15,5 @@ export const CATEGORIES = [
 // 车站关键字（用于打车费分类）
 export const STATION_KEYWORDS = ['机场', '火车站', '高铁站', '动车站', '航站楼', '站']
 
-// 出差补助标准
-export const SUBSIDY_PER_DAY = 70
+// 出差补助标准（默认值，可在填写页修改）
+export const DEFAULT_SUBSIDY_PER_DAY = 70

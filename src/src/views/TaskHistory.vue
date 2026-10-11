@@ -122,7 +122,7 @@
             </div>
             <div class="summary-item summary-total">
               <span class="summary-name">出差补助</span>
-              <span class="summary-count">{{ currentTask.formData?.tripDays || 0 }}天</span>
+              <span class="summary-count">{{ currentTask.formData?.tripDays || 0 }}天{{ currentTask.formData?.subsidyPerDay ? `×${currentTask.formData.subsidyPerDay}元` : '' }}</span>
               <span class="summary-amount">¥{{ formatMoney(currentTask.formData?.subsidy || 0) }}</span>
             </div>
           </div>

@@ -239,6 +239,12 @@ const sessionStore = useSessionStore()
 // 首页功能说明
 const features = [
   {
+    icon: Box,
+    color: '#e6a23c',
+    title: '发票压缩包自动解压',
+    desc: '自动解压目标文件夹下的所有压缩包（.zip 等），再统一进行发票识别处理，无需手动拆包。'
+  },
+  {
     icon: FolderOpened,
     color: '#409eff',
     title: '一键识别整个文件夹',
@@ -273,12 +279,6 @@ const features = [
     color: '#409eff',
     title: '一键生成报销单',
     desc: '发票金额按类别自动填入报销单，自动填写大写金额，一键导出 Excel 报销单。'
-  },
-  {
-    icon: Box,
-    color: '#e6a23c',
-    title: '压缩包自动解压',
-    desc: '自动解压目标文件夹下的所有压缩包（.zip 等），再统一进行发票识别处理，无需手动拆包。'
   },
   {
     icon: DataAnalysis,

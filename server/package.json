@@ -1,0 +1,21 @@
+{
+  "name": "reimbursement-helper-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "出差报销辅助工具 - 多用户后端（账号认证 + 统一大模型 Key 代理 + 任务记录）",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "jsonwebtoken": "^9.0.2"
+  }
+}

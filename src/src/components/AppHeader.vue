@@ -5,17 +5,41 @@
       <h1 class="app-title">报销助手</h1>
     </div>
     <div class="header-right">
+      <span class="user-name">
+        {{ authStore.user?.nickname || authStore.user?.phone }}
+        <el-tag v-if="authStore.isAdmin" size="small" type="warning" effect="plain">管理员</el-tag>
+      </span>
       <el-button circle plain size="small" @click="$emit('open-settings')">
         <el-icon><Setting /></el-icon>
+      </el-button>
+      <el-button circle plain size="small" @click="logout">
+        <el-icon><SwitchButton /></el-icon>
       </el-button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { Setting } from '@element-plus/icons-vue'
+import { Setting, SwitchButton } from '@element-plus/icons-vue'
+import { ElMessageBox } from 'element-plus'
+import { useAuthStore } from '@/stores/auth'
 
 defineEmits(['open-settings'])
+
+const authStore = useAuthStore()
+
+async function logout() {
+  try {
+    await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
+      confirmButtonText: '退出',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    authStore.logout()
+  } catch {
+    // 用户取消
+  }
+}
 </script>
 
 <style scoped>
@@ -46,5 +70,19 @@ defineEmits(['open-settings'])
   font-weight: 600;
   color: #303133;
   margin: 0;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-name {
+  font-size: 13px;
+  color: #606266;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 </style>

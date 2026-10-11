@@ -7,8 +7,11 @@
     :close-on-click-modal="false"
   >
     <!-- 个人信息区 -->
-    <div class="section-title">📌 个人信息（首次填写后自动记忆）</div>
+    <div class="section-title">📌 个人信息</div>
     <el-form label-position="top" class="settings-form">
+      <el-form-item label="昵称">
+        <el-input v-model="localNickname" placeholder="请输入昵称" />
+      </el-form-item>
       <el-form-item label="部门">
         <el-input
           v-model="localProfile.department"
@@ -25,49 +28,57 @@
 
     <el-divider />
 
-    <!-- API Key 区 -->
-    <div class="section-title">🤖 DeepSeek API Key</div>
-    <el-form label-position="top" class="settings-form">
-      <el-form-item label="API Key">
-        <el-input
-          v-model="localApiKey"
-          type="password"
-          placeholder="请输入 DeepSeek API Key"
-          show-password
-        />
-      </el-form-item>
-      <div class="api-actions">
-        <el-button
-          size="small"
-          :loading="testing"
-          @click="testConnection"
-        >
-          测试连接
-        </el-button>
-        <el-button size="small" @click="clearApiKey">
-          清除
-        </el-button>
-        <el-button size="small" type="primary" @click="saveSettings">
-          保存
-        </el-button>
-      </div>
-      <div v-if="testResult !== null" class="test-result">
-        <span v-if="testResult.success" class="test-success">✅ 连接成功</span>
-        <span v-else class="test-fail">❌ {{ testResult.message }}</span>
-      </div>
-    </el-form>
+    <!-- 大模型配置：仅管理员可见 -->
+    <template v-if="auth.isAdmin">
+      <div class="section-title">🤖 统一大模型配置（管理员）</div>
+      <el-form label-position="top" class="settings-form">
+        <el-form-item label="模型">
+          <el-input v-model="llm.model" placeholder="deepseek-chat" />
+        </el-form-item>
+        <el-form-item label="接口地址">
+          <el-input v-model="llm.baseUrl" placeholder="https://api.deepseek.com" />
+        </el-form-item>
+        <el-form-item label="API Key">
+          <el-input
+            v-model="llm.apiKey"
+            type="password"
+            show-password
+            :placeholder="llm.apiKeyMasked ? `已配置：${llm.apiKeyMasked}（留空则不修改）` : '请输入 API Key'"
+          />
+        </el-form-item>
+        <div class="api-actions">
+          <el-button size="small" :loading="testing" @click="testConnection">
+            测试连接
+          </el-button>
+          <el-button size="small" type="primary" @click="saveSettings">
+            保存
+          </el-button>
+        </div>
+        <div v-if="testResult !== null" class="test-result">
+          <span v-if="testResult.success" class="test-success">✅ 连接成功</span>
+          <span v-else class="test-fail">❌ {{ testResult.message }}</span>
+        </div>
+      </el-form>
+    </template>
 
-    <div class="tip-text">
-      💡 还没有 API Key？去
-      <a href="https://platform.deepseek.com" target="_blank" rel="noopener">platform.deepseek.com</a>
-      申请 → 新用户有免费额度
-    </div>
+    <template v-else>
+      <div class="tip-text">
+        💡 大模型 API Key 由管理员统一配置，所有用户共用，无需自行填写。
+      </div>
+      <div class="save-row">
+        <el-button size="small" type="primary" @click="saveSettings">保存</el-button>
+      </div>
+    </template>
   </el-dialog>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, reactive, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useSettingsStore } from '@/stores/settings'
+import { useAuthStore } from '@/stores/auth'
+import { testApiKey } from '@/services/deepseekClient'
+import { apiRequest } from '@/services/api'
 
 const props = defineProps({
   visible: Boolean
@@ -75,75 +86,76 @@ const props = defineProps({
 const emit = defineEmits(['update:visible'])
 
 const settingsStore = useSettingsStore()
+const auth = useAuthStore()
 
-// 本地编辑状态（不直接修改 store，点保存才写入）
-const localProfile = ref({
-  department: '',
-  reimburser: ''
-})
-const localApiKey = ref('')
+const localNickname = ref('')
+const localProfile = reactive({ department: '', reimburser: '' })
+
+const llm = reactive({ apiKey: '', apiKeyMasked: '', model: '', baseUrl: '' })
 const testing = ref(false)
 const testResult = ref(null)
 
-// 弹窗打开时，从 store 同步到本地
-watch(() => props.visible, (val) => {
-  if (val) {
-    localProfile.value = {
-      department: settingsStore.profile.department,
-      reimburser: settingsStore.profile.reimburser
-    }
-    localApiKey.value = settingsStore.deepseekApiKey
+// 弹窗打开时同步数据
+watch(
+  () => props.visible,
+  async (val) => {
+    if (!val) return
+    localNickname.value = auth.user?.nickname || ''
+    localProfile.department = settingsStore.profile.department
+    localProfile.reimburser = settingsStore.profile.reimburser
     testResult.value = null
+    llm.apiKey = ''
+    if (auth.isAdmin) {
+      try {
+        const res = await apiRequest('/admin/llm')
+        llm.apiKeyMasked = res.apiKeyMasked
+        llm.model = res.model
+        llm.baseUrl = res.baseUrl
+      } catch (e) {
+        ElMessage.error(e.message || '读取大模型配置失败')
+      }
+    }
   }
-})
+)
 
-// 测试 DeepSeek API 连接
+// 测试统一 Key 连接
 const testConnection = async () => {
-  if (!localApiKey.value.trim()) {
-    testResult.value = { success: false, message: '请先输入 API Key' }
-    return
-  }
   testing.value = true
   testResult.value = null
   try {
-    const res = await fetch('https://api.deepseek.com/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localApiKey.value.trim()}`
-      },
-      body: JSON.stringify({
-        model: 'deepseek-chat',
-        messages: [{ role: 'user', content: 'hi' }],
-        max_tokens: 5
-      })
-    })
-    if (res.ok) {
-      testResult.value = { success: true }
-    } else {
-      const data = await res.json().catch(() => ({}))
-      const msg = data.error?.message || `HTTP ${res.status}`
-      testResult.value = { success: false, message: msg }
-    }
-  } catch (e) {
-    testResult.value = { success: false, message: '网络错误，请检查连接' }
+    const res = await testApiKey(llm.apiKey.trim() || undefined)
+    testResult.value = res.success
+      ? { success: true }
+      : { success: false, message: res.error || '连接失败' }
   } finally {
     testing.value = false
   }
 }
 
-// 清除 API Key
-const clearApiKey = () => {
-  localApiKey.value = ''
-  testResult.value = null
-}
-
-// 保存设置到 store
-const saveSettings = () => {
-  settingsStore.updateProfile('department', localProfile.value.department)
-  settingsStore.updateProfile('reimburser', localProfile.value.reimburser)
-  settingsStore.updateApiKey(localApiKey.value.trim())
-  emit('update:visible', false)
+// 保存设置
+const saveSettings = async () => {
+  try {
+    if (localNickname.value.trim() && localNickname.value.trim() !== auth.user?.nickname) {
+      await auth.updateProfile({ nickname: localNickname.value.trim() })
+    }
+    if (localProfile.department !== settingsStore.profile.department) {
+      settingsStore.updateProfile('department', localProfile.department)
+    }
+    if (localProfile.reimburser !== settingsStore.profile.reimburser) {
+      settingsStore.updateProfile('reimburser', localProfile.reimburser)
+    }
+    if (auth.isAdmin) {
+      const body = { model: llm.model.trim(), baseUrl: llm.baseUrl.trim() }
+      if (llm.apiKey.trim()) body.apiKey = llm.apiKey.trim()
+      const res = await apiRequest('/admin/llm', { method: 'PUT', body })
+      llm.apiKeyMasked = res.apiKeyMasked
+      llm.apiKey = ''
+    }
+    ElMessage.success('设置已保存')
+    emit('update:visible', false)
+  } catch (e) {
+    ElMessage.error(e.message || '保存失败')
+  }
 }
 </script>
 
@@ -187,20 +199,16 @@ const saveSettings = () => {
   color: #f56c6c;
 }
 
+.save-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .tip-text {
   font-size: 12px;
   color: #909399;
   line-height: 1.6;
-  padding-top: 8px;
+  padding: 8px 0;
   border-top: 1px solid #ebeef5;
-}
-
-.tip-text a {
-  color: #409eff;
-  text-decoration: none;
-}
-
-.tip-text a:hover {
-  text-decoration: underline;
 }
 </style>

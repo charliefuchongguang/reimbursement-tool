@@ -1,33 +1,43 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
-import { get as storageGet, set as storageSet } from '@/utils/storage'
+import { ref, watch } from 'vue'
+import { useAuthStore } from './auth'
 
+/**
+ * 个人信息（部门 / 出差人）现在归属于登录账号，存储在服务端。
+ * 这里保留一个本地可写副本，兼容各页面既有的 v-model 用法。
+ */
 export const useSettingsStore = defineStore('settings', () => {
-  // 个人信息
+  const auth = useAuthStore()
+
   const profile = ref({
-    department: storageGet('profile.department') || '',
-    reimburser: storageGet('profile.reimburser') || ''
+    department: auth.user?.department || '',
+    reimburser: auth.user?.reimburser || ''
   })
 
-  // DeepSeek API Key
-  const deepseekApiKey = ref(storageGet('deepseekApiKey') || '')
-
-  // 修改个人信息时自动保存
-  const updateProfile = (key, value) => {
-    profile.value[key] = value
-    storageSet(`profile.${key}`, value)
+  function syncFromAuth() {
+    profile.value = {
+      department: auth.user?.department || '',
+      reimburser: auth.user?.reimburser || ''
+    }
   }
 
-  // 修改 API Key 时自动保存
-  const updateApiKey = (key) => {
-    deepseekApiKey.value = key
-    storageSet('deepseekApiKey', key)
+  watch(() => auth.user, syncFromAuth, { immediate: true })
+
+  /**
+   * 修改个人信息并同步到服务端
+   * @param {string} key - department | reimburser
+   * @param {string} value
+   */
+  function updateProfile(key, value) {
+    profile.value[key] = value
+    auth.updateProfile({ [key]: value }).catch((e) => {
+      console.error('保存个人信息失败：', e)
+    })
   }
 
   return {
     profile,
-    deepseekApiKey,
     updateProfile,
-    updateApiKey
+    syncFromAuth
   }
 })

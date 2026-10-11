@@ -21,8 +21,11 @@
 | **日期处理** | **dayjs** | 小体积，API 友好 |
 | **文件系统** | **File System Access API**（浏览器原生） | 仅 Chrome/Edge；无需任何库 |
 | **状态管理** | **Vue 3 Composition API + Pinia** | Pinia 是 Vue 官方推荐，比 Vuex 简单 |
-| **数据存储** | **localStorage** | 个人信息 + API Key，5MB 足够 |
-| **AI 服务** | **DeepSeek API（chat completions）** | 兼容 OpenAI 协议，CORS 友好，价格便宜 |
+| **数据存储** | **SQLite（服务端）** + localStorage（前端缓存登录凭证） | 账号与任务记录存服务端；前端仅缓存 token |
+| **AI 服务** | **DeepSeek API（chat completions）** | 兼容 OpenAI 协议，经后端代理调用，Key 不下发前端 |
+| **后端框架** | **Node.js + Express** | 提供服务端认证、统一 Key 代理与任务记录接口 |
+| **用户认证** | **JWT（Bearer Token）** | 手机号登录；首次登录强制修改默认密码 |
+| **服务端数据库** | **SQLite（Node 内置 `node:sqlite`）** | 零原生依赖、单文件，适合内网小规模；后续可平移 MySQL/Postgres |
 | **中文数字大写** | 自写工具函数 `numberToChinese(num)` | 20 行代码搞定，无需引库 |
 
 ---
@@ -361,7 +364,8 @@ export function checkTransportChain(transportInvoices) {
 
 - 使用 **Element Plus 现有组件**，不要手写表格/对话框/步骤条等同类组件
 - 数据存储仅用 `localStorage`，key 全部以 `reimbursement-helper.` 为前缀
-- **不引入后端**，无 Node 服务；所有功能在浏览器完成
+- **多用户版引入 Node 后端**（`server/`）：负责账号认证、统一大模型 Key 代理与任务记录存储；前端仍负责本地文件夹读写与发票识别
+- 前端构建产物由后端静态托管；生产环境经 Nginx + 自有域名 + HTTPS 反代
 - **严禁硬编码** DeepSeek API Key（通过 `SettingsDialog` 让用户输入）
 - Excel 生成**必须用 ExcelJS**，不能用 SheetJS 社区版（无法保留合并单元格样式）
 - 报销单模板放 `public/template.xlsx`（代码自拷贝自 `notes/` 目录）
@@ -374,29 +378,29 @@ export function checkTransportChain(transportInvoices) {
 
 ## 六、AI API 集成说明
 
-### API Key 管理（强制）
+### API Key 管理（多用户版）
 
 - **严禁硬编码**：代码中不能出现明文 Key
-- **localStorage Key**：`reimbursement-helper.deepseek-api-key`
-- **必须提供 `SettingsDialog` 组件**，含：输入 / 显示切换 / 测试连接 / 清除 / 保存
-- **启动检测**：`onMounted` 时检查无 Key 则自动打开 `SettingsDialog`
+- **统一保管**：API Key 存放在服务端 SQLite `settings` 表，由管理员在「设置」弹窗中维护，**不下发到前端**
+- **管理员配置项**：API Key、模型（默认 `deepseek-chat`）、接口地址（默认 `https://api.deepseek.com`）
+- **普通用户**：设置弹窗中不显示 Key 项，仅提示"由管理员统一配置"
 
 ### API 调用封装
 
-统一封装在 `src/services/deepseekClient.js`，包含：
-- `callDeepSeek(prompt)`：发票信息抽取
-- `testConnection()`：设置弹窗里的「测试连接」按钮调用
+- 前端统一封装在 `src/services/deepseekClient.js`，通过 `POST /api/ai/chat` 调用后端代理
+- 后端 `server/routes/ai.js` 注入统一 Key 后转发到 DeepSeek，并负责重试与错误映射
 
 ### 错误处理
 
-- 401 Unauthorized → 提示「API Key 无效或欠费，请到设置里检查」
+- 401 Unauthorized → 提示「统一 API Key 无效或已过期，请联系管理员」
+- 余额不足 → 提示「大模型账户余额不足，请联系管理员」
 - 网络错误 → 提示「网络异常，请检查网络或稍后重试」
-- 超时 → 单张发票最多等 30 秒，超时跳过并标记
+- 请求超时 → 后端 60 秒超时；429/5xx 自动重试 2 次
 
 ### CORS
 
-- DeepSeek API ✅ 原生支持前端直调，无需代理
-- 参考文档：https://api-docs.deepseek.com
+- 开发期通过 Vite 代理 `/api` → 后端 3000 端口，同源无跨域
+- 生产期前端由后端托管，天然同源；参考文档：https://api-docs.deepseek.com
 
 ---
 
@@ -423,17 +427,33 @@ export function checkTransportChain(transportInvoices) {
 
 ---
 
-## 八、启动与构建
+## 八、启动与构建（多用户版）
+
+项目分为前端 `src/`（Vue SPA）与后端 `server/`（Node + Express + SQLite）两部分。
 
 ```bash
-# 安装依赖
-npm install
+# 1. 安装依赖（前后端各一次）
+npm --prefix src install
+npm --prefix server install
 
-# 本地开发（浏览器自动打开 http://localhost:5173）
-npm run dev
+# 2. 配置后端环境变量：复制 server/.env.example 为 server/.env
+#    至少修改 JWT_SECRET，并设置 ADMIN_PHONE（管理员手机号）
 
-# 打包
-npm run build
-# dist/ 目录下即是可分发的静态文件
-# 同事双击 dist/index.html 即可使用（或在内网静态托管）
+# 3. 本地开发
+#    终端 A：启动后端（http://localhost:3000）
+npm --prefix server run dev
+#    终端 B：启动前端 dev server（http://localhost:5173，自动代理 /api 到后端）
+npm --prefix src run dev
+
+# 4. 生产构建与启动（单端口 3000：后端托管前端）
+npm --prefix src run build
+npm --prefix server start
 ```
+
+也可以直接运行根目录的一键启动脚本：`启动项目(windows系统）.bat` / `启动项目（Mac系统）.sh`。
+
+**生产部署（云服务器 + 自有域名）：**
+
+- 用 `pm2` 或 `systemd` 常驻 `node server/index.js`
+- Nginx 反向代理到 `127.0.0.1:3000`，配置自有域名与 HTTPS 证书
+- 环境变量通过 `.env` 注入：`PORT`、`JWT_SECRET`、`ADMIN_PHONE`、`ADMIN_PASSWORD`、`DB_PATH`、默认大模型配置

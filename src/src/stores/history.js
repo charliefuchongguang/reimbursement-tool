@@ -1,23 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import dayjs from 'dayjs'
-import * as storage from '@/utils/storage'
-
-const STORAGE_KEY = 'taskHistory'
-
-/**
- * 从 localStorage 加载任务列表
- */
-function loadTasks() {
-  return storage.get(STORAGE_KEY) || []
-}
-
-/**
- * 持久化任务列表到 localStorage
- */
-function persistTasks(tasks) {
-  storage.set(STORAGE_KEY, tasks)
-}
+import { apiRequest } from '@/services/api'
 
 /**
  * 生成唯一任务 ID
@@ -60,7 +44,7 @@ function sanitizeInvoice(inv) {
 }
 
 export const useHistoryStore = defineStore('history', () => {
-  const tasks = ref(loadTasks())
+  const tasks = ref([])
 
   /**
    * 获取全部任务列表（按生成时间倒序）
@@ -72,15 +56,28 @@ export const useHistoryStore = defineStore('history', () => {
   })
 
   /**
-   * 保存新任务
-   * @param {Object} params
-   * @param {Object} params.formData - form store 数据快照
-   * @param {Array} params.invoices - 发票数组（完整对象）
-   * @param {string} params.folderName - 归档文件夹名
-   * @param {string} params.excelFileName - 报销单文件名
+   * 从服务端加载当前用户的任务记录
+   */
+  async function loadTasks() {
+    try {
+      const res = await apiRequest('/tasks')
+      tasks.value = res.tasks || []
+    } catch (e) {
+      console.error('加载任务记录失败：', e)
+    }
+  }
+
+  /**
+   * 清空本地缓存（登出时调用）
+   */
+  function reset() {
+    tasks.value = []
+  }
+
+  /**
+   * 保存新任务（本地即时添加到服务端异步持久化）
    */
   function saveTask({ formData, invoices, folderName, excelFileName }) {
-    // 计算出差起止日期（基于交通费发票）
     const transportInvoices = invoices.filter(inv => inv.category === '01')
     const getDate = inv => inv.travelDate || inv.issueDate
     const dates = transportInvoices
@@ -91,10 +88,7 @@ export const useHistoryStore = defineStore('history', () => {
     const tripStartDate = dates.length > 0 ? dates[0] : ''
     const tripEndDate = dates.length > 0 ? dates[dates.length - 1] : ''
 
-    // 精简发票数据
     const sanitizedInvoices = invoices.map(sanitizeInvoice)
-
-    // 提取发票编号索引（排除空值）
     const invoiceNos = sanitizedInvoices
       .map(inv => inv.invoiceNo)
       .filter(Boolean)
@@ -139,7 +133,9 @@ export const useHistoryStore = defineStore('history', () => {
     }
 
     tasks.value.push(task)
-    persistTasks(tasks.value)
+    apiRequest('/tasks', { method: 'POST', body: { task } }).catch((e) => {
+      console.error('保存任务记录失败：', e)
+    })
     return task
   }
 
@@ -157,27 +153,27 @@ export const useHistoryStore = defineStore('history', () => {
     const idx = tasks.value.findIndex(t => t.id === id)
     if (idx !== -1) {
       tasks.value.splice(idx, 1)
-      persistTasks(tasks.value)
+      apiRequest(`/tasks/${id}`, { method: 'DELETE' }).catch((e) => {
+        console.error('删除任务记录失败：', e)
+      })
     }
   }
 
   /**
    * 更新任务字段
-   * @param {string} id - 任务 ID
-   * @param {Object} patch - 要更新的字段对象
    */
   function updateTask(id, patch) {
     const task = tasks.value.find(t => t.id === id)
     if (task) {
       Object.assign(task, patch)
-      persistTasks(tasks.value)
+      apiRequest(`/tasks/${id}`, { method: 'PUT', body: { patch } }).catch((e) => {
+        console.error('更新任务记录失败：', e)
+      })
     }
   }
 
   /**
    * 获取所有历史发票编号集合（用于去重检查）
-   * @param {string} [excludeTaskId] - 排除指定任务（如当前任务）
-   * @returns {Set<string>}
    */
   function getAllHistoricalInvoiceNos(excludeTaskId) {
     const nos = new Set()
@@ -193,6 +189,8 @@ export const useHistoryStore = defineStore('history', () => {
   return {
     tasks,
     allTasks,
+    loadTasks,
+    reset,
     saveTask,
     getTaskById,
     deleteTask,

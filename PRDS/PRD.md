@@ -152,19 +152,13 @@
 
 ---
 
-## 四、数据与存储
+## 四、数据与存储（多用户版）
 
-- **存储方式**：浏览器 `localStorage`（不落任何服务器）
-- **存储内容**：
-
-| Key | 内容 |
-|---|---|
-| `reimbursement-helper.profile` | `{ 部门, 出差人 }` |
-| `reimbursement-helper.deepseek-api-key` | DeepSeek API Key |
-| `reimbursement-helper.last-output-dir-name` | 上次输出目录名（仅展示用） |
-
-- **发票数据**：仅在当前会话内存中处理，**不持久化**；关闭页面即清空
-- **发票文件**：仅在用户电脑本地读写；调用 DeepSeek 时只传**文本内容**，不传原始 PDF/XML
+- **账号与任务记录**：存储在服务端 SQLite（`server/data/app.db`），按用户隔离
+- **登录凭证**：前端 `localStorage` 仅缓存 JWT 与用户信息（`reimbursement-helper.authToken` / `authUser`）
+- **统一 API Key**：保存在服务端 `settings` 表，不下发前端
+- **发票数据**：识别过程仅在当前会话内存中处理，**不持久化**；关闭页面即清空
+- **发票文件**：仅在用户电脑本地读写；调用大模型时只传**文本内容**，不传原始 PDF/XML
 
 ---
 
@@ -181,29 +175,26 @@
 
 ## 五-A、AI API 集成规范（DeepSeek）
 
-### API Key 管理（强制）
+### API Key 管理（多用户版，强制）
 1. **严禁在代码中硬编码** API Key
-2. 页面顶部放置齿轮图标 ⚙️，点击打开「设置」弹窗
-3. 设置弹窗包含：
-   - DeepSeek API Key 输入框（密码模式 `••••••`）
-   - 「保存」按钮 → 存入 `localStorage['reimbursement-helper.deepseek-api-key']`
-   - 「清除」按钮
-   - 「测试连接」按钮（发一个简短请求验证 Key 有效）
-4. 首次使用检测到无 Key 时，自动弹窗引导，并附带申请指引链接：[https://platform.deepseek.com](https://platform.deepseek.com)
-5. 代码读取：`const apiKey = localStorage.getItem('reimbursement-helper.deepseek-api-key')`
+2. 页面顶部齿轮图标 ⚙️ → 「设置」弹窗
+3. **管理员**在设置弹窗中维护统一配置：模型、接口地址、API Key，含「测试连接」按钮；保存后写入服务端 `settings` 表
+4. **普通用户**设置弹窗中不显示 Key 项，仅提示"由管理员统一配置"
+5. 前端不读取、不保存 API Key；所有大模型请求经后端 `POST /api/ai/chat` 代理
 
 ### API 调用注意
-- DeepSeek API 兼容 OpenAI 协议，支持前端直调（CORS 友好）
-- 传给 DeepSeek 的内容：发票抽取出来的**文本**（不含原始文件二进制）
+- DeepSeek API 兼容 OpenAI 协议；由后端注入统一 Key 后转发
+- 传给大模型的内容：发票抽取出来的**文本**（不含原始文件二进制）
 - 每张发票单独调用一次 API；约 10 张发票消耗 1 分钱人民币
-- API Key 无效或欠费时提示：「API Key 无效或欠费，请到设置里检查」
+- API Key 无效/欠费时后端返回友好提示：「统一 API Key 无效或已过期，请联系管理员」
 
 ---
 
 ## 六、不在本版本范围内
 
+> 注：**多用户档案管理已于 v2 落地**（账号注册登录 + 统一 API Key + 任务记录上云），详见「八、多用户版（v2）」。
+
 - 扫描件/图片型 PDF 的 OCR 识别（后续若有需求再加 AI 视觉）
-- 多用户档案管理（目前只支持单人使用）
 - 代理费及标书款的自动识别（用户手填）
 - 打印报销单（用户在 Excel 里自己 Ctrl+P）
 - 与财务系统对接、上传报销材料到 OA
@@ -216,6 +207,46 @@
 ## 七、开发工具
 
 - **开发工具**：Qoder
-- **运行方式**：本地启动前端开发服务（如 Vite dev server），浏览器打开 `http://localhost:xxxx`
-- **分发方式**：`npm run build` 后 `dist/` 目录的静态文件可直接由本地静态服务器（如 `npx serve dist`）托管，或部署到内网服务器供同事访问
+- **运行方式**：后端 `npm --prefix server run dev`（3000）+ 前端 `npm --prefix src run dev`（5173，代理 /api），或一键启动脚本
+- **分发/部署**：`npm --prefix src run build` 后由后端托管 `src/dist`，单端口 `http://localhost:3000` 访问；生产环境通过 Nginx + 自有域名 + HTTPS 反代到 Node 服务
 - **目标浏览器**：Chrome ≥ 120 / Edge ≥ 120（需支持 File System Access API）
+
+---
+
+## 八、多用户版（v2）
+
+在原单机版基础上新增账号体系与统一 AI 配置，业务侧（本地文件夹读写、发票识别、Excel 生成）保持不变。
+
+### 功能1：自助注册（F6）
+- **描述**：输入昵称 + 手机号即注册；手机号作为登录账号
+- **初始密码**：手机号后六位
+- **强制改密**：`must_change_password = 1`，首次登录后必须设置新密码
+- **校验**：昵称为空/超长、手机号非 11 位、手机号已注册均给出明确提示
+
+### 功能2：登录验证（F7）
+- **描述**：手机号 + 密码登录，后端签发 JWT（有效期 7 天）
+- **前端**：未登录只显示登录页；`localStorage` 缓存 token，刷新自动恢复登录态
+- **退出**：顶部导航显示昵称与管理员标签，提供退出登录按钮
+
+### 功能3：管理员统一大模型配置（F8）
+- **描述**：管理员在设置弹窗维护模型、接口地址、API Key
+- **隔离**：普通用户看不到 Key；所有 AI 请求经后端代理，Key 不下发前端
+- **管理员来源**：启动时由环境变量 `ADMIN_PHONE`（可选 `ADMIN_PASSWORD`）播种
+
+### 功能4：任务记录服务端化（F9）
+- **描述**：任务记录从 `localStorage` 迁移到服务端，按用户隔离、跨设备可见
+- 接口：`GET/POST/PUT/DELETE /api/tasks`
+
+### 后端接口一览
+
+| 方法与路径 | 说明 | 权限 |
+|---|---|---|
+| `POST /api/auth/register` | 注册（昵称+手机号） | 公开 |
+| `POST /api/auth/login` | 登录，返回 JWT | 公开 |
+| `GET /api/auth/me` | 当前用户 | 登录 |
+| `POST /api/auth/change-password` | 修改密码 | 登录 |
+| `PUT /api/auth/profile` | 更新昵称/部门/出差人 | 登录 |
+| `GET/POST/PUT/DELETE /api/tasks` | 任务记录 CRUD | 登录（按用户隔离） |
+| `GET/PUT /api/admin/llm` | 读取/更新统一大模型配置 | 管理员 |
+| `POST /api/ai/chat` | 大模型代理（注入统一 Key） | 登录 |
+| `POST /api/ai/test` | 测试统一 Key | 管理员 |

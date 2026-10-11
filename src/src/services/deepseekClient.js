@@ -1,24 +1,12 @@
 /**
- * DeepSeek API 客户端封装
- * 用于发票信息提取与分类
+ * 大模型客户端封装
+ * 通过自有后端 /api/ai/* 代理调用，统一 API Key 由服务端保管，不下发前端。
  */
-import { useSettingsStore } from '../stores/settings'
+import { apiRequest } from './api'
 
-const API_URL = 'https://api.deepseek.com/chat/completions'
 const DEFAULT_MAX_TOKENS = 2048
 const DEFAULT_TEMPERATURE = 0.1
-const REQUEST_TIMEOUT = 30000        // 30秒超时（文本识别）
-const VISION_REQUEST_TIMEOUT = 45000  // 45秒超时（视觉识别）
-const MAX_RETRIES = 2                // 最大重试次数
-const RETRY_DELAY = 2000             // 重试等待时间（毫秒）
 
-/**
- * 带超时的 fetch 请求
- * @param {string} url - 请求地址
- * @param {RequestInit} options - fetch 参数
- * @param {number} timeout - 超时毫秒数
- * @returns {Promise<Response>}
- */
 /**
  * 根据车次号判断交通工具类型
  */
@@ -34,188 +22,62 @@ function getTransportTool(trainNo) {
 /**
  * 城市名规范化：去掉站名后缀
  * "北京西" → "北京"，"长沙南" → "长沙"，"广州南站" → "广州"
- * @param {string} name - 原始站名/城市名
- * @returns {string} 规范化后的城市名
  */
 function normalizeCityName(name) {
   if (!name || typeof name !== 'string') return name
-  // 去掉末尾的 站/南/西/东/北 及其组合（如 南站、西站）
   return name.replace(/(?:南?站|西?站|东?站|北?站|南站|西站|东站|北站|站|南|西|东|北)$/, '')
 }
 
-async function fetchWithTimeout(url, options, timeout = REQUEST_TIMEOUT) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeout)
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal
-    })
-    return response
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
 /**
- * 调用 DeepSeek API
+ * 调用后端代理的大模型对话接口
  * @param {string} systemPrompt - 系统提示
- * @param {string} userContent - 用户输入内容
- * @param {Object} options - 可选配置 { maxTokens, temperature }
- * @param {number} [retryCount=0] - 当前重试次数（内部使用）
- * @returns {Promise<string>} AI 回复的文本内容
+ * @param {string|Array} userContent - 用户输入（文本或多模态数组）
+ * @param {Object} options - { maxTokens, temperature }
+ * @returns {Promise<string>} AI 回复文本
  */
-export async function callDeepSeek(systemPrompt, userContent, options = {}, retryCount = 0) {
-  const settings = useSettingsStore()
-  const apiKey = settings.deepseekApiKey
-
-  if (!apiKey) {
-    throw new Error('未配置 DeepSeek API Key，请在设置中填写。')
-  }
-
-  const maxTokens = options.maxTokens || DEFAULT_MAX_TOKENS
-  const temperature = options.temperature ?? DEFAULT_TEMPERATURE
-
-  const body = {
-    model: 'deepseek-chat',
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userContent }
-    ],
-    max_tokens: maxTokens,
-    temperature,
-    stream: false
-  }
-
-  try {
-    const response = await fetchWithTimeout(API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(body)
-    })
-
-    // 401 - API Key 无效
-    if (response.status === 401) {
-      throw new Error('API Key 无效或已过期，请检查设置。')
+export async function callDeepSeek(systemPrompt, userContent, options = {}) {
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userContent }
+  ]
+  const res = await apiRequest('/ai/chat', {
+    method: 'POST',
+    body: {
+      messages,
+      maxTokens: options.maxTokens || DEFAULT_MAX_TOKENS,
+      temperature: options.temperature ?? DEFAULT_TEMPERATURE
     }
-
-    // 402 - 余额不足
-    if (response.status === 402) {
-      throw new Error('DeepSeek 账户余额不足，请充值后重试。')
-    }
-
-    // 429 - QPS 超限，自动重试
-    if (response.status === 429) {
-      if (retryCount < MAX_RETRIES) {
-        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY))
-        return callDeepSeek(systemPrompt, userContent, options, retryCount + 1)
-      }
-      throw new Error('请求过于频繁，请稍后再试。')
-    }
-
-    // 500+ 服务器错误
-    if (response.status >= 500) {
-      if (retryCount < MAX_RETRIES) {
-        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY))
-        return callDeepSeek(systemPrompt, userContent, options, retryCount + 1)
-      }
-      throw new Error(`DeepSeek 服务异常（${response.status}），请稍后再试。`)
-    }
-
-    // 其他非 2xx 错误
-    if (!response.ok) {
-      let errorMsg = `请求失败（${response.status}）`
-      try {
-        const errData = await response.json()
-        if (errData?.error?.message) {
-          errorMsg = errData.error.message
-        }
-      } catch {
-        // 忽略 JSON 解析失败
-      }
-      throw new Error(errorMsg)
-    }
-
-    const data = await response.json()
-    const content = data?.choices?.[0]?.message?.content
-    if (!content) {
-      throw new Error('AI 返回内容为空，请重试。')
-    }
-    return content.trim()
-  } catch (e) {
-    // 超时 / 网络中断
-    if (e.name === 'AbortError') {
-      throw new Error('请求超时，请检查网络连接后重试。')
-    }
-    // 已经是友好错误信息，直接抛出
-    if (e.message && !e.message.includes('fetch')) {
-      throw e
-    }
-    throw new Error('网络连接失败，请检查网络后重试。')
-  }
+  })
+  return res.content
 }
 
 /**
- * 测试 API Key 是否有效
- * @param {string} apiKey - 要测试的 Key
+ * 测试统一 API Key 是否有效（仅管理员）
+ * @param {string} [apiKey] - 不传则测试服务端已保存的 Key
  * @returns {Promise<{ success: boolean, error?: string }>}
  */
 export async function testApiKey(apiKey) {
-  if (!apiKey || !apiKey.trim()) {
-    return { success: false, error: 'API Key 不能为空' }
-  }
-
   try {
-    const response = await fetchWithTimeout(API_URL, {
+    const res = await apiRequest('/ai/test', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey.trim()}`
-      },
-      body: JSON.stringify({
-        model: 'deepseek-chat',
-        messages: [{ role: 'user', content: 'Hi' }],
-        max_tokens: 5,
-        stream: false
-      })
+      body: apiKey ? { apiKey: String(apiKey).trim() } : {}
     })
-
-    if (response.status === 401) {
-      return { success: false, error: 'API Key 无效或已过期' }
-    }
-    if (response.status === 402) {
-      return { success: false, error: '账户余额不足' }
-    }
-    if (response.ok) {
-      return { success: true }
-    }
-    return { success: false, error: `验证失败（${response.status}）` }
+    return res
   } catch (e) {
-    if (e.name === 'AbortError') {
-      return { success: false, error: '网络连接超时' }
-    }
-    return { success: false, error: '网络连接失败' }
+    return { success: false, error: e.message || '测试失败' }
   }
 }
 
 /**
  * 从 AI 返回内容中提取 JSON
- * 处理可能的 markdown 代码块包裹（```json ... ```）
- * @param {string} content - AI 返回的原始文本
- * @returns {Object} 解析后的 JSON 对象
  */
 function extractJsonFromAiContent(content) {
-  // 尝试直接解析
   try {
     return JSON.parse(content)
   } catch {
     // 继续
   }
 
-  // 尝试从 markdown 代码块中提取
   const codeBlockMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/)
   if (codeBlockMatch) {
     try {
@@ -225,7 +87,6 @@ function extractJsonFromAiContent(content) {
     }
   }
 
-  // 尝试找到第一个 { 到最后一个 } 之间的内容
   const firstBrace = content.indexOf('{')
   const lastBrace = content.lastIndexOf('}')
   if (firstBrace !== -1 && lastBrace > firstBrace) {
@@ -267,14 +128,11 @@ const INVOICE_SYSTEM_PROMPT = `你是一个发票识别助手。请根据提供�
 
 /**
  * 发票识别专用：将发票文本/XML数据发给AI进行清洗和分类
- * @param {Object} rawData - { text, xmlData, fileName }
- * @returns {Promise<Object>} 清洗后的结构化发票数据
  */
 export async function recognizeInvoice(rawData) {
   let userContent = ''
 
   if (rawData.xmlData) {
-    // 优先使用 XML 结构化数据
     userContent = `以下是电子发票的XML结构化数据：\n`
     userContent += `文件名：${rawData.fileName || '未知'}\n`
     userContent += `XML数据：\n${JSON.stringify(rawData.xmlData)}\n`
@@ -282,7 +140,6 @@ export async function recognizeInvoice(rawData) {
       userContent += `\nPDF原文（辅助参考）：\n${rawData.text}`
     }
   } else if (rawData.text) {
-    // 仅文本
     userContent = `以下是发票的文本内容：\n`
     userContent += `文件名：${rawData.fileName || '未知'}\n`
     userContent += `文本内容：\n${rawData.text}`
@@ -292,17 +149,14 @@ export async function recognizeInvoice(rawData) {
 
   let lastError = null
 
-  // 最多尝试 2 次（首次 + 1 次重试）
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const aiContent = await callDeepSeek(INVOICE_SYSTEM_PROMPT, userContent)
       const result = extractJsonFromAiContent(aiContent)
 
-      // 规范化后处理：对关键字段做 trim，避免空格/格式问题导致后续匹配失败
       if (typeof result.invoiceType === 'string') result.invoiceType = result.invoiceType.trim()
       if (typeof result.category === 'string') result.category = result.category.trim()
 
-      // 根据车次号修正交通工具类型
       if (result.trainNo && (result.transportTool === '火车' || result.transportTool === '高铁' || result.transportTool === '动车' || result.transportTool === '城际')) {
         result.transportTool = getTransportTool(result.trainNo)
       }
@@ -310,7 +164,6 @@ export async function recognizeInvoice(rawData) {
       return result
     } catch (e) {
       lastError = e
-      // 仅在 JSON 解析失败时重试，其他错误直接抛出
       if (e.message?.includes('JSON')) {
         console.warn(`发票识别第 ${attempt + 1} 次尝试失败，JSON 解析错误`)
         continue
@@ -352,102 +205,32 @@ const VISION_SYSTEM_PROMPT = `你是一个发票视觉识别助手。请识别�
 
 /**
  * 视觉识别发票（用于扫描件/图片型PDF）
- * 将PDF渲染的图片发送给DeepSeek视觉模型进行识别
- * @param {string} imageBase64 - 纯base64字符串（不含data URL前缀）
- * @returns {Promise<Object>} 识别后的结构化发票数据
+ * @param {string} imageBase64 - 纯 base64 字符串（不含 data URL 前缀）
  */
 export async function recognizeInvoiceByVision(imageBase64) {
-  const settings = useSettingsStore()
-  const apiKey = settings.deepseekApiKey
-
-  if (!apiKey) {
-    throw new Error('未配置 DeepSeek API Key，请在设置中填写。')
-  }
-
-  const body = {
-    model: 'deepseek-chat',
-    messages: [
-      { role: 'system', content: VISION_SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image_url',
-            image_url: {
-              url: `data:image/png;base64,${imageBase64}`
-            }
-          },
-          {
-            type: 'text',
-            text: '请识别这张发票/火车票图片，提取信息并以JSON格式返回。'
-          }
-        ]
-      }
-    ],
-    max_tokens: DEFAULT_MAX_TOKENS,
-    temperature: DEFAULT_TEMPERATURE,
-    stream: false
-  }
+  const userContent = [
+    {
+      type: 'image_url',
+      image_url: { url: `data:image/png;base64,${imageBase64}` }
+    },
+    {
+      type: 'text',
+      text: '请识别这张发票/火车票图片，提取信息并以JSON格式返回。'
+    }
+  ]
 
   let lastError = null
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const response = await fetchWithTimeout(API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify(body)
-      }, VISION_REQUEST_TIMEOUT)
+      const content = await callDeepSeek(VISION_SYSTEM_PROMPT, userContent)
+      const result = extractJsonFromAiContent(content)
 
-      // 错误处理（与 callDeepSeek 保持一致）
-      if (response.status === 401) {
-        throw new Error('API Key 无效或已过期，请检查设置。')
-      }
-      if (response.status === 402) {
-        throw new Error('DeepSeek 账户余额不足，请充值后重试。')
-      }
-      if (response.status === 429) {
-        if (attempt < MAX_RETRIES) {
-          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY))
-          continue
-        }
-        throw new Error('请求过于频繁，请稍后再试。')
-      }
-      if (response.status >= 500) {
-        if (attempt < MAX_RETRIES) {
-          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY))
-          continue
-        }
-        throw new Error(`DeepSeek 服务异常（${response.status}），请稍后再试。`)
-      }
-      if (!response.ok) {
-        let errorMsg = `请求失败（${response.status}）`
-        try {
-          const errData = await response.json()
-          if (errData?.error?.message) errorMsg = errData.error.message
-        } catch { /* ignore */ }
-        throw new Error(errorMsg)
-      }
-
-      const data = await response.json()
-      const content = data?.choices?.[0]?.message?.content
-      if (!content) {
-        throw new Error('AI 返回内容为空，请重试。')
-      }
-
-      const result = extractJsonFromAiContent(content.trim())
-
-      // 规范化后处理
       if (typeof result.invoiceType === 'string') result.invoiceType = result.invoiceType.trim()
       if (typeof result.category === 'string') result.category = result.category.trim()
-      // 城市名规范化
       result.origin = normalizeCityName(result.origin)
       result.destination = normalizeCityName(result.destination)
 
-      // 根据车次号修正交通工具类型
       if (result.trainNo && (result.transportTool === '火车' || result.transportTool === '高铁' || result.transportTool === '动车' || result.transportTool === '城际')) {
         result.transportTool = getTransportTool(result.trainNo)
       }
@@ -455,9 +238,6 @@ export async function recognizeInvoiceByVision(imageBase64) {
       return result
     } catch (e) {
       lastError = e
-      if (e.name === 'AbortError') {
-        throw new Error('视觉识别请求超时，请检查网络连接后重试。')
-      }
       if (e.message?.includes('JSON')) {
         console.warn(`视觉识别第 ${attempt + 1} 次尝试失败，JSON 解析错误`)
         continue

@@ -1,0 +1,17 @@
+[Unit]
+Description=Reimbursement Helper (multi-user web app)
+After=network.target
+
+[Service]
+Type=simple
+# 后端目录（.env 与 SQLite 数据都在这里）
+WorkingDirectory=/opt/reimbursement-helper/server
+ExecStart=/usr/bin/node index.js
+Restart=on-failure
+RestartSec=3
+# 建议使用非 root 用户运行（按需修改）
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target

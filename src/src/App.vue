@@ -1,81 +1,91 @@
 <template>
   <div class="app-container">
-    <!-- 浏览器不兼容全屏提示 -->
-    <div v-if="!isSupported" class="unsupported-overlay">
-      <div class="unsupported-card">
-        <div class="unsupported-icon">⚠️</div>
-        <h2>浏览器不兼容</h2>
-        <p>当前浏览器不支持文件系统访问，请使用 Chrome 或 Edge 浏览器（版本 ≥ 120）</p>
-      </div>
-    </div>
+    <!-- 未登录：显示登录/注册 -->
+    <LoginView v-if="!authStore.isAuthenticated" />
+
+    <!-- 首次登录强制改密 -->
+    <ChangePasswordView v-else-if="authStore.mustChangePassword" />
 
     <template v-else>
-      <!-- 顶部导航栏 -->
-      <AppHeader @open-settings="settingsVisible = true" />
+      <!-- 浏览器不兼容全屏提示 -->
+      <div v-if="!isSupported" class="unsupported-overlay">
+        <div class="unsupported-card">
+          <div class="unsupported-icon">⚠️</div>
+          <h2>浏览器不兼容</h2>
+          <p>当前浏览器不支持文件系统访问，请使用 Chrome 或 Edge 浏览器（版本 ≥ 120）</p>
+        </div>
+      </div>
 
-      <!-- Tab 切换 -->
-      <el-tabs v-model="activeTab" class="app-tabs">
-        <el-tab-pane label="报销流程" name="flow">
-          <!-- 步骤条 -->
-          <div class="steps-wrapper">
-            <el-steps :active="currentStep" finish-status="success" align-center>
-              <el-step title="选择文件夹" />
-              <el-step title="识别审查" />
-              <el-step title="填写信息" />
-              <el-step title="归档生成" />
-            </el-steps>
-          </div>
+      <template v-else>
+        <!-- 顶部导航栏 -->
+        <AppHeader @open-settings="settingsVisible = true" />
 
-          <!-- 主内容区 -->
-          <el-main class="app-main">
-            <Step1SelectFolder v-if="currentStep === 0" />
-            <Step2ReviewInvoices v-else-if="currentStep === 1" ref="step2Ref" />
-            <Step3FillInfo v-else-if="currentStep === 2" ref="step3Ref" />
-            <Step4Generate v-else-if="currentStep === 3" />
-          </el-main>
-
-          <!-- 底部导航按钮 -->
-          <el-footer class="app-footer">
-            <div class="footer-buttons">
-              <el-button
-                :disabled="currentStep === 0"
-                @click="prevStep"
-              >
-                上一步
-              </el-button>
-              <el-button
-                type="primary"
-                :disabled="currentStep === 3"
-                @click="nextStep"
-              >
-                下一步
-              </el-button>
+        <!-- Tab 切换 -->
+        <el-tabs v-model="activeTab" class="app-tabs">
+          <el-tab-pane label="报销流程" name="flow">
+            <!-- 步骤条 -->
+            <div class="steps-wrapper">
+              <el-steps :active="currentStep" finish-status="success" align-center>
+                <el-step title="选择文件夹" />
+                <el-step title="识别审查" />
+                <el-step title="填写信息" />
+                <el-step title="归档生成" />
+              </el-steps>
             </div>
-          </el-footer>
-        </el-tab-pane>
 
-        <el-tab-pane label="任务记录" name="history">
-          <TaskHistory />
-        </el-tab-pane>
+            <!-- 主内容区 -->
+            <el-main class="app-main">
+              <Step1SelectFolder v-if="currentStep === 0" />
+              <Step2ReviewInvoices v-else-if="currentStep === 1" ref="step2Ref" />
+              <Step3FillInfo v-else-if="currentStep === 2" ref="step3Ref" />
+              <Step4Generate v-else-if="currentStep === 3" />
+            </el-main>
 
-        <el-tab-pane label="出差日历" name="calendar">
-          <TripCalendar />
-        </el-tab-pane>
-      </el-tabs>
+            <!-- 底部导航按钮 -->
+            <el-footer class="app-footer">
+              <div class="footer-buttons">
+                <el-button
+                  :disabled="currentStep === 0"
+                  @click="prevStep"
+                >
+                  上一步
+                </el-button>
+                <el-button
+                  type="primary"
+                  :disabled="currentStep === 3"
+                  @click="nextStep"
+                >
+                  下一步
+                </el-button>
+              </div>
+            </el-footer>
+          </el-tab-pane>
 
-      <!-- 设置弹窗 -->
-      <SettingsDialog v-model:visible="settingsVisible" />
+          <el-tab-pane label="任务记录" name="history">
+            <TaskHistory />
+          </el-tab-pane>
+
+          <el-tab-pane label="出差日历" name="calendar">
+            <TripCalendar />
+          </el-tab-pane>
+        </el-tabs>
+
+        <!-- 设置弹窗 -->
+        <SettingsDialog v-model:visible="settingsVisible" />
+      </template>
     </template>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, shallowRef } from 'vue'
+import { ref, onMounted, watch, shallowRef } from 'vue'
 import { ElMessageBox } from 'element-plus'
-import { useSettingsStore } from './stores/settings'
-import { useSessionStore } from './stores/session'
+import { useAuthStore } from './stores/auth'
+import { useHistoryStore } from './stores/history'
 import AppHeader from './components/AppHeader.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
+import LoginView from './views/LoginView.vue'
+import ChangePasswordView from './views/ChangePasswordView.vue'
 import Step1SelectFolder from './views/Step1SelectFolder.vue'
 import Step2ReviewInvoices from './views/Step2ReviewInvoices.vue'
 import Step3FillInfo from './views/Step3FillInfo.vue'
@@ -83,8 +93,8 @@ import Step4Generate from './views/Step4Generate.vue'
 import TaskHistory from './views/TaskHistory.vue'
 import TripCalendar from './views/TripCalendar.vue'
 
-const settingsStore = useSettingsStore()
-const sessionStore = useSessionStore()
+const authStore = useAuthStore()
+const historyStore = useHistoryStore()
 
 const activeTab = ref('flow')
 const currentStep = ref(0)
@@ -93,17 +103,27 @@ const isSupported = ref(true)
 const step2Ref = shallowRef(null)
 const step3Ref = shallowRef(null)
 
-onMounted(() => {
+onMounted(async () => {
   // 浏览器兼容性检测
   if (!('showDirectoryPicker' in window)) {
     isSupported.value = false
   }
 
-  // 首次打开时检测 API Key，为空则自动弹出设置弹窗
-  if (!settingsStore.deepseekApiKey) {
-    settingsVisible.value = true
+  // 恢复登录态，并按用户加载任务记录
+  await authStore.restore()
+  if (authStore.isAuthenticated) {
+    historyStore.loadTasks()
   }
 })
+
+// 登录/登出时同步任务记录
+watch(
+  () => authStore.isAuthenticated,
+  (val) => {
+    if (val) historyStore.loadTasks()
+    else historyStore.reset()
+  }
+)
 
 const prevStep = () => {
   if (currentStep.value > 0) {

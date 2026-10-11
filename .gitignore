@@ -35,3 +35,6 @@ template_extracted/
 
 # Qoder 缓存
 .qoder/
+
+# 本地打包产物
+src.zip

@@ -109,3 +109,38 @@ npm --prefix server install
 npm --prefix src install && npm --prefix src run build
 sudo systemctl restart reimbursement   # 或 pm2 restart reimbursement-helper
 ```
+
+---
+
+## 十、Alibaba Cloud Linux + 宝塔面板 实际部署记录（本机环境）
+
+本次生产部署环境：
+
+- 系统：**Alibaba Cloud Linux 3.2104**（dnf）
+- 服务器 IP：`8.147.234.131`，域名 `www.ozranger.top`
+- 已安装 Node v22.23.3、git，Web 服务为**宝塔面板自编译 Nginx**（prefix `/www/server/nginx`），站点配置目录 `/www/server/panel/vhost/nginx/`
+- 应用目录：`/opt/reimbursement-helper`，systemd 服务名 `reimbursement`
+
+关键点：
+
+1. 私有仓库用 **GitHub Deploy Key**（只读）拉取，无需暴露账号 token
+2. 管理员账号由 `.env` 的 `ADMIN_PHONE` 播种，首次登录强制改密
+3. **大陆服务器需 ICP 备案**：未备案域名访问 80/443 会被阿里云拦截，返回 `Server: Beaver` + `Non-compliance ICP Filing`。备案前只能用 IP 访问（且 HTTPS 功能不可用）
+
+### 备案通过后启用 HTTPS
+
+```bash
+# 在服务器执行（脚本已随仓库部署）
+sudo bash /opt/reimbursement-helper/deploy/finalize-https.sh www.ozranger.top
+```
+
+脚本会：签发 Let's Encrypt 证书 → 配置 80 跳转 443 → 443 反代到 `127.0.0.1:3000` → 开启自动续期。
+
+### 日常运维
+
+```bash
+sudo systemctl status reimbursement      # 查看状态
+sudo systemctl restart reimbursement     # 重启
+cd /opt/reimbursement-helper && git pull # 拉取更新
+npm --prefix src run build               # 更新后重新构建前端
+```

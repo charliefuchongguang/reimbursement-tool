@@ -116,6 +116,7 @@ export const useHistoryStore = defineStore('history', () => {
         agencyFee: formData.agencyFee || 0,
         prepaidAmount: formData.prepaidAmount || 0,
         tripDays: formData.tripDays || 0,
+        subsidyPerDay: formData.subsidyPerDay || 0,
         subsidy: formData.subsidy || 0,
         transportTotal: formData.transportTotal || 0,
         taxiStationTotal: formData.taxiStationTotal || 0,

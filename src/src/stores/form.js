@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import dayjs from 'dayjs'
 import { useSessionStore } from './session'
-import { SUBSIDY_PER_DAY } from '@/utils/constants'
+import { DEFAULT_SUBSIDY_PER_DAY } from '@/utils/constants'
 
 export const useFormStore = defineStore('form', () => {
   // ─── 可编辑字段 ───
@@ -11,6 +11,7 @@ export const useFormStore = defineStore('form', () => {
   const reimburseDate = ref('')
   const agencyFee = ref(0)
   const prepaidAmount = ref(0)
+  const subsidyPerDay = ref(DEFAULT_SUBSIDY_PER_DAY)
 
   // ─── 计算属性：出差天数 ───
   // 按出差段分段计算：出京-回京配对，每段含首尾，多段累加
@@ -104,8 +105,8 @@ export const useFormStore = defineStore('form', () => {
     return dayjs(dates[dates.length - 1]).diff(dayjs(dates[0]), 'day') + 1
   }
 
-  // ─── 计算属性：出差补助 ───
-  const subsidy = computed(() => tripDays.value * SUBSIDY_PER_DAY)
+  // ─── 计算属性：出差补助 = 出差天数 × 补助标准（用户可输入） ───
+  const subsidy = computed(() => tripDays.value * subsidyPerDay.value)
 
   // ─── 辅助函数：判断是否为实际计费发票（排除行程单） ───
   function isActualInvoice(inv) {
@@ -235,6 +236,7 @@ export const useFormStore = defineStore('form', () => {
     reimburseDate.value = ''
     agencyFee.value = 0
     prepaidAmount.value = 0
+    subsidyPerDay.value = DEFAULT_SUBSIDY_PER_DAY
   }
 
   return {
@@ -244,6 +246,7 @@ export const useFormStore = defineStore('form', () => {
     reimburseDate,
     agencyFee,
     prepaidAmount,
+    subsidyPerDay,
     // 计算属性
     tripDays,
     subsidy,

@@ -115,7 +115,7 @@ export async function generateExcel(params) {
   // 4. 填写出差补助区（第7行）
   if (formData.tripDays > 0) {
     sheet.getCell('L7').value = formData.tripDays   // 天数
-    sheet.getCell('M7').value = round2(formData.subsidy)     // 补助金额 = tripDays × 70
+    sheet.getCell('M7').value = round2(formData.subsidy)     // 补助金额 = tripDays × subsidyPerDay
   }
 
   // 5. 填写其他费用区（第7-15行，N-P列）

@@ -91,8 +91,20 @@
           <span class="calc-value">{{ formStore.tripDays }} 天</span>
         </div>
         <div class="calc-row">
+          <span class="calc-label">补助标准（元/天）</span>
+          <el-input-number
+            v-model="formStore.subsidyPerDay"
+            :min="0"
+            :precision="2"
+            :step="10"
+            size="small"
+            controls-position="right"
+            class="subsidy-input"
+          />
+        </div>
+        <div class="calc-row">
           <span class="calc-label">出差补助</span>
-          <span class="calc-value">¥{{ formatMoney(formStore.subsidy) }} <span class="calc-hint">({{ formStore.tripDays }}天 × {{ SUBSIDY_PER_DAY }}元/天)</span></span>
+          <span class="calc-value">¥{{ formatMoney(formStore.subsidy) }} <span class="calc-hint">({{ formStore.tripDays }}天 × {{ formStore.subsidyPerDay }}元/天)</span></span>
         </div>
 
         <el-divider />
@@ -291,7 +303,6 @@ import { useSettingsStore } from '../stores/settings'
 import { useFormStore } from '../stores/form'
 import { useSessionStore } from '../stores/session'
 import { numberToChinese } from '../utils/numberToChinese'
-import { SUBSIDY_PER_DAY } from '../utils/constants'
 
 const settingsStore = useSettingsStore()
 const formStore = useFormStore()
@@ -473,6 +484,11 @@ defineExpose({
   font-size: 12px;
   color: #909399;
   margin-left: 4px;
+}
+
+/* 补助标准输入框 */
+.subsidy-input {
+  width: 130px;
 }
 
 /* 合计行 */

@@ -24,10 +24,10 @@ export const useAuthStore = defineStore('auth', () => {
     persist()
   }
 
-  async function register(nickname, phone) {
+  async function register(nickname, phone, password) {
     const res = await apiRequest('/auth/register', {
       method: 'POST',
-      body: { nickname, phone },
+      body: { nickname, phone, password },
       auth: false
     })
     applyAuth(res)

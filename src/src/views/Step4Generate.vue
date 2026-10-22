@@ -94,6 +94,18 @@
               <span class="pdf-info-detail">{{ info.pages }}页，{{ info.size }}</span>
             </div>
           </div>
+          <!-- 行程单匹配提示 -->
+          <div v-if="mergeWarnings.length > 0" class="error-list">
+            <el-alert
+              type="warning"
+              :closable="false"
+              :title="`行程单提示（${mergeWarnings.length}）`"
+            >
+              <ul>
+                <li v-for="(w, idx) in mergeWarnings" :key="idx">{{ w }}</li>
+              </ul>
+            </el-alert>
+          </div>
           <!-- 归档失败文件 -->
           <div v-if="archiveErrors.length > 0" class="error-list">
             <el-alert
@@ -125,7 +137,9 @@ import { useHistoryStore } from '../stores/history'
 import { CATEGORIES } from '../utils/constants'
 import { archiveInvoices } from '../services/archiver'
 import { generateExcel } from '../services/excelGenerator'
-import { mergeInvoicePdfs, mergeOtherPdfs } from '../services/pdfMerger'
+import { fileToPngs, mergePrintImages, mergeOtherPdfs } from '../services/pdfMerger'
+import { parseItineraryPdf } from '../services/itineraryParser'
+import { rebuildItineraryPngs } from '../services/itineraryRebuilder'
 import { PDFDocument } from 'pdf-lib'
 
 const sessionStore = useSessionStore()
@@ -149,9 +163,12 @@ const mergedFiles = ref([])
 const printLayout = ref('twoPerPage')
 const completedSteps = ref([])
 const pdfInfos = ref([])
+const mergeWarnings = ref([])
 
-// 非发票类型（正常合并，不做排版）
-const NON_INVOICE_TYPES = ['机票行程单', '打车行程单']
+// 其他票据类型（进入"其他票据合并.pdf"，保持原始合并）
+const OTHER_TICKET_TYPES = ['机票行程单']
+// 打车行程单：重构后混排进"发票合并打印.pdf"，不进入其他票据
+const TAXI_ITINERARY_TYPE = '打车行程单'
 
 // 当前进度百分比
 const currentProgress = computed(() => {
@@ -262,23 +279,99 @@ async function execute() {
     excelPhase.value = false
     mergedFiles.value = []
     pdfInfos.value = []
+    mergeWarnings.value = []
 
-    const invoicePdfs = sessionStore.invoices.filter(
-      inv => !NON_INVOICE_TYPES.includes(inv.invoiceType) && inv.fileHandle
+    const allInvoices = sessionStore.invoices
+
+    // 其他票据（机票行程单等）：保持原始合并，且排除打车行程单
+    const otherPdfs = allInvoices.filter(
+      inv => OTHER_TICKET_TYPES.includes(inv.invoiceType) && inv.fileHandle
     )
-    const otherPdfs = sessionStore.invoices.filter(
-      inv => NON_INVOICE_TYPES.includes(inv.invoiceType) && inv.fileHandle
+    // 打车发票（实际计费发票，非行程单）
+    const taxiInvoices = allInvoices.filter(
+      inv => inv.category === '02' && inv.invoiceType !== TAXI_ITINERARY_TYPE && inv.fileHandle
+    )
+    // 打车行程单
+    const itineraryEntries = allInvoices.filter(
+      inv => inv.invoiceType === TAXI_ITINERARY_TYPE && inv.fileHandle
     )
 
-    mergeTotal.value = invoicePdfs.length + otherPdfs.length
+    mergeTotal.value = allInvoices.filter(inv => inv.fileHandle).length
     mergeCurrent.value = 0
 
     try {
-      // 发票类 PDF 合并（根据用户选择决定排版方式）
-      if (invoicePdfs.length > 0) {
-        const mergeFn = printLayout.value === 'twoPerPage' ? mergeInvoicePdfs : mergeOtherPdfs
-        const mergedData = await mergeFn(invoicePdfs, (cur) => {
-          mergeCurrent.value = cur
+      // 5.1 解析行程单，并按其"合计金额"与打车发票按金额相等配对
+      const itineraryInfos = []
+      for (const entry of itineraryEntries) {
+        let parsed = { ok: false }
+        try {
+          const f = await entry.fileHandle.getFile()
+          parsed = await parseItineraryPdf(await f.arrayBuffer())
+        } catch (e) {
+          console.warn('行程单解析失败：', entry.fileName, e)
+        }
+        itineraryInfos.push({
+          entry,
+          parsed,
+          total: parsed.ok ? (parsed.summary?.total ?? null) : null,
+          used: false,
+          pngs: null
+        })
+      }
+
+      const matchByInvoiceId = new Map()
+      for (const inv of taxiInvoices) {
+        if (inv.amount == null) continue
+        const hit = itineraryInfos.find(
+          it => !it.used && it.total != null && Math.abs(it.total - inv.amount) < 0.02
+        )
+        if (hit) {
+          hit.used = true
+          matchByInvoiceId.set(inv.id, hit)
+        }
+      }
+
+      // 行程单 → PNG（优先重构，扫描件降级为原页图片）
+      const itineraryPngs = async (it) => {
+        if (!it.pngs) {
+          it.pngs = it.parsed.ok
+            ? await rebuildItineraryPngs(it.parsed)
+            : await fileToPngs(it.entry.fileHandle)
+        }
+        return it.pngs
+      }
+
+      // 5.2 按识别顺序混排：每张打车发票后紧跟其重构行程单
+      const orderedPngs = []
+      let processed = 0
+      for (const inv of allInvoices) {
+        if (!inv.fileHandle) continue
+        if (inv.invoiceType === TAXI_ITINERARY_TYPE) continue
+        if (OTHER_TICKET_TYPES.includes(inv.invoiceType)) continue
+
+        orderedPngs.push(...(await fileToPngs(inv.fileHandle)))
+
+        const it = matchByInvoiceId.get(inv.id)
+        if (it) {
+          orderedPngs.push(...(await itineraryPngs(it)))
+        } else if (inv.category === '02') {
+          mergeWarnings.value.push(`打车发票「${inv.invoiceNo || inv.fileName}」未匹配到行程单，已按原样打印`)
+        }
+
+        processed++
+        mergeCurrent.value = processed
+      }
+
+      // 5.3 未匹配到发票的行程单：重构后追加到末尾
+      for (const it of itineraryInfos) {
+        if (it.used) continue
+        orderedPngs.push(...(await itineraryPngs(it)))
+        mergeWarnings.value.push(`行程单「${it.entry.fileName}」未匹配到对应打车发票，已追加到末尾`)
+      }
+
+      if (orderedPngs.length > 0) {
+        const mergedData = await mergePrintImages(orderedPngs, {
+          mode: printLayout.value === 'twoPerPage' ? 'twoPerPage' : 'onePerPage'
         })
         const invoiceFileName = '发票合并打印.pdf'
         const invFileHandle = await rootDir.getFileHandle(invoiceFileName, { create: true })
@@ -294,10 +387,10 @@ async function execute() {
         })
       }
 
-      // 非发票类 PDF 正常合并
+      // 5.4 其他票据合并（不含打车行程单）
       if (otherPdfs.length > 0) {
         const mergedData = await mergeOtherPdfs(otherPdfs, (cur) => {
-          mergeCurrent.value = invoicePdfs.length + cur
+          mergeCurrent.value = processed + cur
         })
         const otherFileName = '其他票据合并.pdf'
         const otherFileHandle = await rootDir.getFileHandle(otherFileName, { create: true })
@@ -312,6 +405,7 @@ async function execute() {
           size: formatFileSize(mergedData.length)
         })
       }
+
       completedSteps.value.push('PDF合并完成')
     } catch (mergeErr) {
       console.error('PDF合并失败：', mergeErr)

@@ -53,12 +53,18 @@
             <el-form-item label="手机号" prop="phone">
               <el-input v-model="registerForm.phone" maxlength="11" placeholder="请输入手机号" />
             </el-form-item>
-            <el-alert
-              type="info"
-              :closable="false"
-              show-icon
-              title="初始密码为手机号后六位，首次登录后需修改。"
-            />
+            <el-form-item label="密码" prop="password">
+              <el-input v-model="registerForm.password" type="password" show-password placeholder="请设置密码（至少 6 位）" />
+            </el-form-item>
+            <el-form-item label="确认密码" prop="confirmPassword">
+              <el-input
+                v-model="registerForm.confirmPassword"
+                type="password"
+                show-password
+                placeholder="请再次输入密码"
+                @keyup.enter="submitRegister"
+              />
+            </el-form-item>
             <el-button
               type="primary"
               class="auth-submit"
@@ -88,7 +94,7 @@ const loginFormRef = ref(null)
 const registerFormRef = ref(null)
 
 const loginForm = reactive({ phone: '', password: '' })
-const registerForm = reactive({ nickname: '', phone: '' })
+const registerForm = reactive({ nickname: '', phone: '', password: '', confirmPassword: '' })
 
 const PHONE_RE = /^1[3-9]\d{9}$/
 
@@ -105,6 +111,20 @@ const registerRules = {
   phone: [
     { required: true, message: '请输入手机号', trigger: 'blur' },
     { pattern: PHONE_RE, message: '请输入有效的 11 位手机号', trigger: 'blur' }
+  ],
+  password: [
+    { required: true, message: '请输入密码', trigger: 'blur' },
+    { min: 6, message: '密码至少 6 位', trigger: 'blur' }
+  ],
+  confirmPassword: [
+    { required: true, message: '请再次输入密码', trigger: 'blur' },
+    {
+      validator: (rule, value, cb) => {
+        if (value !== registerForm.password) cb(new Error('两次输入的密码不一致'))
+        else cb()
+      },
+      trigger: 'blur'
+    }
   ]
 }
 
@@ -127,8 +147,8 @@ async function submitRegister() {
   if (!valid) return
   loading.value = true
   try {
-    await auth.register(registerForm.nickname.trim(), registerForm.phone.trim())
-    ElMessage.success('注册成功，请设置新密码')
+    await auth.register(registerForm.nickname.trim(), registerForm.phone.trim(), registerForm.password)
+    ElMessage.success('注册成功')
   } catch (e) {
     ElMessage.error(e.message || '注册失败')
   } finally {

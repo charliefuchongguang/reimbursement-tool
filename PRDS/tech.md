@@ -24,7 +24,7 @@
 | **数据存储** | **SQLite（服务端）** + localStorage（前端缓存登录凭证） | 账号与任务记录存服务端；前端仅缓存 token |
 | **AI 服务** | **DeepSeek API（chat completions）** | 兼容 OpenAI 协议，经后端代理调用，Key 不下发前端 |
 | **后端框架** | **Node.js + Express** | 提供服务端认证、统一 Key 代理与任务记录接口 |
-| **用户认证** | **JWT（Bearer Token）** | 手机号登录；首次登录强制修改默认密码 |
+| **用户认证** | **JWT（Bearer Token）** | 手机号登录；注册时自定义密码 |
 | **服务端数据库** | **SQLite（Node 内置 `node:sqlite`）** | 零原生依赖、单文件，适合内网小规模；后续可平移 MySQL/Postgres |
 | **中文数字大写** | 自写工具函数 `numberToChinese(num)` | 20 行代码搞定，无需引库 |
 

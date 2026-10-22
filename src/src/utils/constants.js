@@ -17,3 +17,11 @@ export const STATION_KEYWORDS = ['机场', '火车站', '高铁站', '动车站'
 
 // 出差补助标准（默认值，可在填写页修改）
 export const DEFAULT_SUBSIDY_PER_DAY = 70
+
+// 打印纸张尺寸（毫米，横版）
+export const PRINT_PAPER_MM = { width: 210, height: 140 }
+// 打印边距（毫米）
+export const PRINT_MARGIN_MM = 3
+
+// 毫米 → 点（PDF 单位）
+export const MM_TO_PT = 72 / 25.4

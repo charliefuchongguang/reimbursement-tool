@@ -6,7 +6,7 @@ import {
   updateUserPassword,
   updateUserProfile
 } from '../db.js'
-import { verifyPassword, defaultPasswordFromPhone } from '../utils/password.js'
+import { verifyPassword } from '../utils/password.js'
 import { signToken, authRequired, publicUser } from '../middleware/auth.js'
 
 const router = express.Router()
@@ -15,23 +15,27 @@ const PHONE_RE = /^1[3-9]\d{9}$/
 const MIN_PASSWORD_LEN = 6
 
 /**
- * 注册：昵称 + 手机号，初始密码 = 手机号后六位
+ * 注册：昵称 + 手机号 + 自定义密码
  */
 router.post('/register', (req, res) => {
   const nickname = String(req.body?.nickname || '').trim()
   const phone = String(req.body?.phone || '').trim()
+  const password = String(req.body?.password || '')
 
   if (!nickname) return res.status(400).json({ message: '请填写昵称。' })
   if (nickname.length > 30) return res.status(400).json({ message: '昵称不能超过 30 个字符。' })
   if (!PHONE_RE.test(phone)) return res.status(400).json({ message: '请输入有效的 11 位手机号。' })
+  if (password.length < MIN_PASSWORD_LEN) {
+    return res.status(400).json({ message: `密码至少 ${MIN_PASSWORD_LEN} 位。` })
+  }
   if (getUserByPhone(phone)) return res.status(409).json({ message: '该手机号已注册，请直接登录。' })
 
   const user = createUser({
     phone,
     nickname,
-    password: defaultPasswordFromPhone(phone),
+    password,
     role: 'user',
-    mustChangePassword: 1
+    mustChangePassword: 0
   })
 
   res.status(201).json({ token: signToken(user), user: publicUser(user) })

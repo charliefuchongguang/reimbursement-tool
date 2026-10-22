@@ -23,23 +23,23 @@
     <!-- 主体：左右分栏 -->
     <div class="main-layout">
       <!-- 左侧：发票列表 -->
-      <div class="left-panel">
+      <div class="left-panel" v-loading="sessionStore.busy" element-loading-text="正在识别发票...">
         <!-- 工具栏 -->
         <div class="toolbar">
-          <el-button size="small" @click="manualAddVisible = true">
+          <el-button size="small" :disabled="sessionStore.busy" @click="manualAddVisible = true">
             <el-icon><Plus /></el-icon>
             手动添加
           </el-button>
-          <el-button size="small" :disabled="selectedInvoices.length === 0" @click="deleteSelected">
+          <el-button size="small" :disabled="sessionStore.busy || selectedInvoices.length === 0" @click="deleteSelected">
             <el-icon><Delete /></el-icon>
             删除选中
           </el-button>
           <el-dropdown
             trigger="click"
-            :disabled="selectedInvoices.length === 0"
+            :disabled="sessionStore.busy || selectedInvoices.length === 0"
             @command="batchChangeCategory"
           >
-            <el-button size="small" :disabled="selectedInvoices.length === 0">
+            <el-button size="small" :disabled="sessionStore.busy || selectedInvoices.length === 0">
               修改类别
               <el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </el-button>
@@ -324,7 +324,21 @@ onMounted(() => {
 
 async function startRecognition() {
   recognizing.value = true
+  sessionStore.busy = true
   progress.value = 0
+  try {
+    await runRecognition()
+  } catch (e) {
+    console.error('识别流程失败：', e)
+    ElMessage.error('识别流程出错：' + (e.message || e))
+  } finally {
+    recognizing.value = false
+    sessionStore.busy = false
+    currentFile.value = ''
+  }
+}
+
+async function runRecognition() {
   const files = sessionStore.files
   const results = []
 
@@ -405,9 +419,6 @@ async function startRecognition() {
   // 存入 store
   sessionStore.invoices = classified
   sessionStore.globalIssues = [...chainResult.issues, ...complianceResult.globalIssues]
-
-  recognizing.value = false
-  currentFile.value = ''
 
   ElMessage.success(`识别完成，共 ${classified.length} 张发票`)
 }

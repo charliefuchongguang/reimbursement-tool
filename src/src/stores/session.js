@@ -14,12 +14,16 @@ export const useSessionStore = defineStore('session', () => {
   // 跨发票问题
   const globalIssues = ref([])
 
+  // 自动化处理中（扫描文件夹 / 解压 / 发票识别等），用于禁用下一步等操作
+  const busy = ref(false)
+
   // 重置会话数据
   const resetSession = () => {
     sourceDirHandle.value = null
     files.value = []
     invoices.value = []
     globalIssues.value = []
+    busy.value = false
   }
 
   return {
@@ -27,6 +31,7 @@ export const useSessionStore = defineStore('session', () => {
     files,
     invoices,
     globalIssues,
+    busy,
     resetSession
   }
 })

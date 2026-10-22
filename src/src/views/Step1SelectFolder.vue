@@ -337,6 +337,7 @@ async function selectFolder() {
     sessionStore.sourceDirHandle = dirHandle
     folderName.value = dirHandle.name
     scanning.value = true
+    sessionStore.busy = true
 
     // 先解压压缩包
     extracting.value = true
@@ -384,6 +385,7 @@ async function selectFolder() {
     ElMessage.error('选择文件夹失败：' + e.message)
   } finally {
     scanning.value = false
+    sessionStore.busy = false
   }
 }
 

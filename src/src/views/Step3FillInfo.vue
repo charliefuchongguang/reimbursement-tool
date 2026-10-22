@@ -39,7 +39,14 @@
         <el-row :gutter="24">
           <el-col :span="12">
             <el-form-item label="项目简写" prop="projectCode">
-              <el-input v-model="formStore.projectCode" placeholder="请输入项目简写" maxlength="50" />
+              <el-autocomplete
+                v-model="formStore.projectCode"
+                :fetch-suggestions="fetchProjectSuggestions"
+                placeholder="请输入或选择项目简写"
+                clearable
+                style="width: 100%"
+                @change="onProjectCodeChange"
+              />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -302,11 +309,13 @@ import dayjs from 'dayjs'
 import { useSettingsStore } from '../stores/settings'
 import { useFormStore } from '../stores/form'
 import { useSessionStore } from '../stores/session'
+import { useProjectsStore } from '../stores/projects'
 import { numberToChinese } from '../utils/numberToChinese'
 
 const settingsStore = useSettingsStore()
 const formStore = useFormStore()
 const sessionStore = useSessionStore()
+const projectsStore = useProjectsStore()
 
 // ─── 费用分类发票展开状态 ───
 const expandedKeys = reactive({})
@@ -360,6 +369,7 @@ onMounted(() => {
   if (!formStore.reimburseDate) {
     formStore.reimburseDate = dayjs().format('YYYY-MM-DD')
   }
+  projectsStore.load()
 })
 
 // ─── 部门/出差人修改同步到 settings ───
@@ -369,6 +379,20 @@ function onDepartmentChange(val) {
 
 function onReimburserChange(val) {
   settingsStore.updateProfile('reimburser', val)
+}
+
+// ─── 项目简写：历史联想 + 记忆 ───
+function fetchProjectSuggestions(queryString, cb) {
+  const q = (queryString || '').trim().toLowerCase()
+  const list = projectsStore.projects
+    .filter((p) => !q || (p.code || '').toLowerCase().includes(q))
+    .slice(0, 20)
+    .map((p) => ({ value: p.code, useCount: p.useCount }))
+  cb(list)
+}
+
+function onProjectCodeChange(val) {
+  projectsStore.remember(val)
 }
 
 // ─── 金额格式化：千位分隔符 + 2位小数 ───

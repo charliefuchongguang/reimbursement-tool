@@ -41,6 +41,18 @@ export function initDb() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id);
+
+    CREATE TABLE IF NOT EXISTS projects (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      code TEXT NOT NULL,
+      use_count INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL,
+      UNIQUE(user_id, code),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id);
   `)
 
   seedSettings()

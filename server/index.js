@@ -8,6 +8,7 @@ import { config } from './config.js'
 import { initDb } from './db.js'
 import authRoutes from './routes/auth.js'
 import taskRoutes from './routes/tasks.js'
+import projectRoutes from './routes/projects.js'
 import adminRoutes from './routes/admin.js'
 import aiRoutes from './routes/ai.js'
 
@@ -32,6 +33,7 @@ app.get('/api/health', (req, res) => res.json({ ok: true }))
 
 app.use('/api/auth', authLimiter, authRoutes)
 app.use('/api/tasks', taskRoutes)
+app.use('/api/projects', projectRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/ai', aiRoutes)
 

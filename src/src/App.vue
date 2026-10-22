@@ -45,14 +45,14 @@
             <el-footer class="app-footer">
               <div class="footer-buttons">
                 <el-button
-                  :disabled="currentStep === 0"
+                  :disabled="currentStep === 0 || sessionStore.busy"
                   @click="prevStep"
                 >
                   上一步
                 </el-button>
                 <el-button
                   type="primary"
-                  :disabled="currentStep === 3"
+                  :disabled="currentStep === 3 || sessionStore.busy"
                   @click="nextStep"
                 >
                   下一步
@@ -82,6 +82,8 @@ import { ref, onMounted, watch, shallowRef } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { useAuthStore } from './stores/auth'
 import { useHistoryStore } from './stores/history'
+import { useProjectsStore } from './stores/projects'
+import { useSessionStore } from './stores/session'
 import AppHeader from './components/AppHeader.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
 import LoginView from './views/LoginView.vue'
@@ -95,6 +97,8 @@ import TripCalendar from './views/TripCalendar.vue'
 
 const authStore = useAuthStore()
 const historyStore = useHistoryStore()
+const projectsStore = useProjectsStore()
+const sessionStore = useSessionStore()
 
 const activeTab = ref('flow')
 const currentStep = ref(0)
@@ -113,6 +117,7 @@ onMounted(async () => {
   await authStore.restore()
   if (authStore.isAuthenticated) {
     historyStore.loadTasks()
+    projectsStore.load()
   }
 })
 
@@ -120,8 +125,13 @@ onMounted(async () => {
 watch(
   () => authStore.isAuthenticated,
   (val) => {
-    if (val) historyStore.loadTasks()
-    else historyStore.reset()
+    if (val) {
+      historyStore.loadTasks()
+      projectsStore.load()
+    } else {
+      historyStore.reset()
+      projectsStore.reset()
+    }
   }
 )
 

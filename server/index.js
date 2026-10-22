@@ -43,8 +43,23 @@ app.use('/api', (req, res) => res.status(404).json({ message: '接口不存在�
 // 托管前端构建产物（src/dist），并支持 SPA 回退
 const distDir = path.resolve(__dirname, '..', 'src', 'dist')
 if (fs.existsSync(distDir)) {
-  app.use(express.static(distDir))
-  app.get('*', (req, res) => res.sendFile(path.join(distDir, 'index.html')))
+  app.use(
+    express.static(distDir, {
+      setHeaders(res, filePath) {
+        if (filePath.endsWith('index.html')) {
+          // 入口 HTML 不缓存，保证前端更新即时生效
+          res.setHeader('Cache-Control', 'no-cache')
+        } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          // 带哈希的静态资源可长期缓存
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+        }
+      }
+    })
+  )
+  app.get('*', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache')
+    res.sendFile(path.join(distDir, 'index.html'))
+  })
 } else {
   app.get('/', (req, res) =>
     res

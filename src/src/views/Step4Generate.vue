@@ -165,10 +165,8 @@ const completedSteps = ref([])
 const pdfInfos = ref([])
 const mergeWarnings = ref([])
 
-// 其他票据类型（进入"其他票据合并.pdf"，保持原始合并）
-const OTHER_TICKET_TYPES = ['机票行程单']
-// 打车行程单：重构后混排进"发票合并打印.pdf"，不进入其他票据
-const TAXI_ITINERARY_TYPE = '打车行程单'
+// 行程单判定：invoiceType 含"行程单"（兼容"打车行程单/滴滴行程单/高德行程单"等）
+const isItinerary = (inv) => (inv.invoiceType || '').includes('行程单')
 
 // 当前进度百分比
 const currentProgress = computed(() => {
@@ -283,17 +281,17 @@ async function execute() {
 
     const allInvoices = sessionStore.invoices
 
-    // 其他票据（机票行程单等）：保持原始合并，且排除打车行程单
+    // 其他票据（机票行程单等）：保持原始合并
     const otherPdfs = allInvoices.filter(
-      inv => OTHER_TICKET_TYPES.includes(inv.invoiceType) && inv.fileHandle
+      inv => isItinerary(inv) && inv.category !== '02' && inv.fileHandle
     )
     // 打车发票（实际计费发票，非行程单）
     const taxiInvoices = allInvoices.filter(
-      inv => inv.category === '02' && inv.invoiceType !== TAXI_ITINERARY_TYPE && inv.fileHandle
+      inv => inv.category === '02' && !isItinerary(inv) && inv.fileHandle
     )
     // 打车行程单
     const itineraryEntries = allInvoices.filter(
-      inv => inv.invoiceType === TAXI_ITINERARY_TYPE && inv.fileHandle
+      inv => inv.category === '02' && isItinerary(inv) && inv.fileHandle
     )
 
     mergeTotal.value = allInvoices.filter(inv => inv.fileHandle).length
@@ -346,8 +344,7 @@ async function execute() {
       let processed = 0
       for (const inv of allInvoices) {
         if (!inv.fileHandle) continue
-        if (inv.invoiceType === TAXI_ITINERARY_TYPE) continue
-        if (OTHER_TICKET_TYPES.includes(inv.invoiceType)) continue
+        if (isItinerary(inv)) continue
 
         orderedPngs.push(...(await fileToPngs(inv.fileHandle)))
 

@@ -32,6 +32,20 @@ export async function generateExcel(params) {
 
   const sheet = workbook.getWorksheet('长沙报销单') || workbook.getWorksheet(1)
 
+  // 打印设置：
+  // - 关闭纵向居中，让表格内容贴在页面顶部（纵向 A4 打印时可裁掉下半页直接使用）
+  // - 缩小页边距，横向打印时铺满 140×210mm 纸张
+  sheet.pageSetup.verticalCentered = false
+  sheet.pageSetup.horizontalCentered = true
+  sheet.pageSetup.margins = {
+    left: 0.12,
+    right: 0.12,
+    top: 0.1,
+    bottom: 0.1,
+    header: 0,
+    footer: 0
+  }
+
   // 2. 填写表头区
   // D3 = 部门
   sheet.getCell('D3').value = profile.department || ''

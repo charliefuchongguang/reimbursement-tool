@@ -68,6 +68,10 @@
           <el-tab-pane label="出差日历" name="calendar">
             <TripCalendar />
           </el-tab-pane>
+
+          <el-tab-pane v-if="authStore.isAdmin" label="账号管理" name="users">
+            <UserManage />
+          </el-tab-pane>
         </el-tabs>
 
         <!-- 设置弹窗 -->
@@ -94,6 +98,7 @@ import Step3FillInfo from './views/Step3FillInfo.vue'
 import Step4Generate from './views/Step4Generate.vue'
 import TaskHistory from './views/TaskHistory.vue'
 import TripCalendar from './views/TripCalendar.vue'
+import UserManage from './views/UserManage.vue'
 
 const authStore = useAuthStore()
 const historyStore = useHistoryStore()
